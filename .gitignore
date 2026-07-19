@@ -1,0 +1,28 @@
+# Target and build output
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.rar
+
+# IDE & Editor files
+.idea/
+*.iml
+.vscode/
+*.factorypath
+.project
+.classpath
+.settings/
+
+# Logs
+*.log
+logs/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Environment & local overrides
+.env
+*.local
