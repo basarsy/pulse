@@ -67,11 +67,15 @@ flowchart TB
   - Flyway database migration baseline (`V1__init_schema.sql`)
   - Infrastructure setup (`docker-compose.yml` with Postgres 16, Redis 7, Kafka in KRaft mode)
   - Git repository initialization and GitHub remote integration
-- [ ] **Phase 1 — Auth & Vehicle Core** (Next)
-  - User registration/login with JWT
-  - Vehicle registry & ownership management
-  - Family member access authorization
-- [ ] **Phase 2 — Remote Command Engine**
+- [x] **Phase 1 — Auth & Vehicle Core**
+  - User registration (`/api/v1/auth/register`) & login (`/api/v1/auth/login`) with BCrypt password hashing
+  - Stateless JWT access and refresh token issuance & validation (`JwtService`, `JwtAuthenticationFilter`)
+  - Role-Based Access Control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`)
+  - Vehicle registry CRUD & VIN uniqueness checks (`/api/v1/vehicles`)
+  - SpEL method-security ownership and family member authorization (`/api/v1/vehicles/{id}/authorize`)
+  - Fleet-wide vehicle management endpoint (`/api/v1/fleet/vehicles`)
+  - Unit test suite for `AuthService` and `VehicleService`
+- [ ] **Phase 2 — Remote Command Engine** (Next)
   - Command state machine & Kafka command queue
   - Vehicle Simulator v1 (Commands + Heartbeats)
   - STOMP WebSocket status push
