@@ -75,12 +75,15 @@ flowchart TB
   - SpEL method-security ownership and family member authorization (`/api/v1/vehicles/{id}/authorize`)
   - Fleet-wide vehicle management endpoint (`/api/v1/fleet/vehicles`)
   - Unit test suite for `AuthService` and `VehicleService`
-- [ ] **Phase 2 — Remote Command Engine** (Next)
-  - Command state machine & Kafka command queue
-  - Vehicle Simulator v1 (Commands + Heartbeats)
-  - STOMP WebSocket status push
-  - Redis idempotency & rate limiting
-- [ ] **Phase 3 — OTA & Fleet Rollout Engine**
+- [x] **Phase 2 — Remote Command Engine**
+  - Remote command state machine (`PENDING` -> `SENT` -> `ACKNOWLEDGED` -> `COMPLETED` / `FAILED` / `TIMED_OUT`)
+  - Kafka command pipeline (`vehicle.commands` and `vehicle.command-results`)
+  - Standalone Vehicle Simulator (v1) mocking ECU latency (1-2.5s), execution results, and heartbeats (`vehicle.heartbeat`)
+  - Real-time STOMP WebSocket push channel (`/topic/vehicles/{vehicleId}/commands`)
+  - Redis-backed idempotency tracking (24h TTL) and rate limiting (max 10 commands/min per user)
+  - Scheduled command timeout cleanup job (`@Scheduled`)
+  - Unit test suite for `CommandService` (11 total tests passing)
+- [ ] **Phase 3 — OTA & Fleet Rollout Engine** (Next)
   - Software version registry
   - Staged rollout campaign manager & auto-pause logic
   - Vehicle Simulator v2 (Download/Install simulation)
