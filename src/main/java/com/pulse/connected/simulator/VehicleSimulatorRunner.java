@@ -4,14 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.command.CommandStatus;
 import com.pulse.connected.messaging.KafkaTopicConfig;
 import com.pulse.connected.messaging.dto.CommandResultEvent;
+import com.pulse.connected.messaging.dto.OtaInstructionEvent;
+import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import com.pulse.connected.messaging.dto.VehicleCommandEvent;
 import com.pulse.connected.messaging.dto.VehicleHeartbeatEvent;
+import com.pulse.connected.ota.UpdateStatus;
 import com.pulse.connected.vehicle.ConnectivityState;
 import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -99,5 +101,58 @@ public class VehicleSimulatorRunner {
         } catch (Exception e) {
             log.error("Simulator error handling command message: {}", message, e);
         }
+    }
+
+    @KafkaListener(topics = KafkaTopicConfig.TOPIC_OTA_INSTRUCTIONS, groupId = "vehicle-simulator-group")
+    public void handleIncomingOtaInstruction(String message) {
+        try {
+            OtaInstructionEvent instruction = objectMapper.readValue(message, OtaInstructionEvent.class);
+            log.info("Simulator [Vehicle {}] starting OTA update for version [{}]",
+                    instruction.getVehicleId(), instruction.getTargetVersionLabel());
+
+            // 1. Downloading 25%
+            publishOtaProgress(instruction, UpdateStatus.DOWNLOADING, 25, null);
+            Thread.sleep(500);
+
+            // 2. Downloading 100% -> Downloaded
+            publishOtaProgress(instruction, UpdateStatus.DOWNLOADING, 100, null);
+            publishOtaProgress(instruction, UpdateStatus.DOWNLOADED, 100, null);
+            Thread.sleep(500);
+
+            // 3. Installing 50%
+            publishOtaProgress(instruction, UpdateStatus.INSTALLING, 50, null);
+            Thread.sleep(500);
+
+            // 4. 90% success, 10% failure simulation
+            boolean success = random.nextDouble() > 0.10;
+
+            if (success) {
+                publishOtaProgress(instruction, UpdateStatus.INSTALLED, 100, null);
+                log.info("Simulator [Vehicle {}] successfully INSTALLED version [{}]",
+                        instruction.getVehicleId(), instruction.getTargetVersionLabel());
+            } else {
+                publishOtaProgress(instruction, UpdateStatus.FAILED, 50, "ECU checksum verification failed during flashing");
+                log.warn("Simulator [Vehicle {}] FAILED installing version [{}]",
+                        instruction.getVehicleId(), instruction.getTargetVersionLabel());
+            }
+
+        } catch (Exception e) {
+            log.error("Simulator error handling OTA instruction message: {}", message, e);
+        }
+    }
+
+    private void publishOtaProgress(OtaInstructionEvent instruction, UpdateStatus status, int progress, String errorMessage) throws Exception {
+        OtaUpdateProgressEvent progressEvent = OtaUpdateProgressEvent.builder()
+                .updateStatusId(instruction.getUpdateStatusId())
+                .vehicleId(instruction.getVehicleId())
+                .campaignId(instruction.getCampaignId())
+                .status(status)
+                .progressPercent(progress)
+                .errorMessage(errorMessage)
+                .timestamp(Instant.now())
+                .build();
+
+        String payload = objectMapper.writeValueAsString(progressEvent);
+        kafkaTemplate.send(KafkaTopicConfig.TOPIC_OTA_UPDATE_STATUS, instruction.getVehicleId().toString(), payload);
     }
 }

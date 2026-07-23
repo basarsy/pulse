@@ -84,11 +84,16 @@ flowchart TB
   - Redis-backed idempotency tracking (24h TTL) and rate limiting (max 10 commands/min per user)
   - Scheduled command timeout cleanup job (`@Scheduled`)
   - Unit test suite for `CommandService` (11 total tests passing)
-- [ ] **Phase 3 — OTA & Fleet Rollout Engine** (Next)
-  - Software version registry
-  - Staged rollout campaign manager & auto-pause logic
-  - Vehicle Simulator v2 (Download/Install simulation)
-- [ ] **Phase 4 — Telemetry & Observability**
+- [x] **Phase 3 — OTA & Fleet Rollout Engine**
+  - Software version package registry (`/api/v1/software-versions`)
+  - Staged canary rollout campaign state machine (`DRAFT` -> `IN_PROGRESS` -> `PAUSED` -> `COMPLETED` / `ABORTED`) with customizable stages (e.g. 5% → 25% → 100%)
+  - Automated failure threshold monitoring: auto-pauses rollout if stage failure rate exceeds configurable threshold
+  - Per-vehicle update status lifecycle (`PENDING` -> `DOWNLOADING` -> `DOWNLOADED` -> `INSTALLING` -> `INSTALLED` / `FAILED` -> `ROLLED_BACK`)
+  - Kafka OTA instructions pipeline (`ota.vehicle-instructions` and `ota.vehicle-update-status`)
+  - Real-time STOMP WebSockets streaming campaign progress to `/topic/rollouts/{campaignId}` and vehicle updates to `/topic/vehicles/{id}/update-status`
+  - Vehicle Simulator (v2) with multi-step download/install simulation and failure injection
+  - Unit test suite for `RolloutCampaignService` (14 total tests passing across project)
+- [ ] **Phase 4 — Telemetry & Observability** (Next)
   - Telemetry ingestion pipeline
   - Resilience4j circuit breakers & retries
   - Micrometer / Prometheus / Grafana observability
