@@ -1,9 +1,8 @@
 #!/bin/sh
 # ----------------------------------------------------------------------------
-# Apache Maven Wrapper startup batch script, version 3.3.2
+# Apache Maven Wrapper startup script
 # ----------------------------------------------------------------------------
 
-# Provide a default set of JVM options
 MAVEN_OPTS="-Xms256m -Xmx512m"
 
 # Find base directory
@@ -32,4 +31,4 @@ if [ -n "$JAVA_HOME" ]; then
 fi
 
 WRAPPER_JAR="$MAVEN_PROJECTBASEDIR/.mvn/wrapper/maven-wrapper.jar"
-exec "$JAVACMD" $MAVEN_OPTS -classpath "$WRAPPER_JAR" org.apache.maven.wrapper.MavenWrapperMain "$@"
+exec "$JAVACMD" $MAVEN_OPTS -Dmaven.multiModuleProjectDirectory="$MAVEN_PROJECTBASEDIR" -classpath "$WRAPPER_JAR" org.apache.maven.wrapper.MavenWrapperMain "$@"
