@@ -5,6 +5,7 @@
 [![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.7-black.svg)](https://kafka.apache.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7.0-red.svg)](https://redis.io/)
+[![CI/CD Pipeline](https://github.com/basarsy/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/basarsy/pulse/actions/workflows/ci.yml)
 
 **Pulse** is an enterprise-grade backend simulating a premium automaker's connected-car ecosystem (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels) and **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic safety rollbacks).
 
@@ -104,7 +105,7 @@ flowchart TB
 - **Messaging**: Apache Kafka (Spring Kafka)
 - **WebSockets**: Spring WebSocket, STOMP
 - **Testing**: JUnit 5, Mockito, Testcontainers
-- **Containers**: Docker, Docker Compose
+- **Containers & CI/CD**: Docker, Docker Compose, GitHub Actions (.github/workflows/ci.yml)
 
 ---
 
