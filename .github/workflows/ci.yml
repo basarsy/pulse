@@ -15,24 +15,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 21 & Maven
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Grant Execute Permission for Maven Wrapper
-        run: chmod +x mvnw
-
       - name: Build with Maven
-        run: ./mvnw clean compile -B
+        run: mvn clean compile -B
 
       - name: Run Unit & Integration Tests
-        run: ./mvnw test -B
+        run: mvn test -B
 
       - name: Package JAR Artifact
-        run: ./mvnw package -DskipTests -B
+        run: mvn package -DskipTests -B
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4

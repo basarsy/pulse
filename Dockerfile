@@ -1,14 +1,12 @@
 # Multi-stage Dockerfile for Pulse Connected Vehicle & Fleet OTA Platform
 
 # Stage 1: Build application JAR
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /app
-COPY .mvn/ .mvn
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw
-RUN ./mvnw dependency:go-offline -B
+COPY pom.xml ./
+RUN mvn dependency:go-offline -B
 COPY src ./src
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 # Stage 2: Minimal runtime image
 FROM eclipse-temurin:21-jre-alpine
