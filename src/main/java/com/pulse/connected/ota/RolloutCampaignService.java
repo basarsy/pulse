@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import com.pulse.connected.common.AuditLogService;
+
 @Service
 public class RolloutCampaignService {
 
@@ -32,6 +35,8 @@ public class RolloutCampaignService {
     private final OtaKafkaProducer otaKafkaProducer;
     private final OtaWebSocketService otaWebSocketService;
     private final SoftwareVersionService softwareVersionService;
+    private final AuditLogService auditLogService;
+    private final MeterRegistry meterRegistry;
 
     public RolloutCampaignService(
             RolloutCampaignRepository campaignRepository,
@@ -40,7 +45,9 @@ public class RolloutCampaignService {
             VehicleUpdateStatusRepository vehicleUpdateStatusRepository,
             OtaKafkaProducer otaKafkaProducer,
             OtaWebSocketService otaWebSocketService,
-            SoftwareVersionService softwareVersionService) {
+            SoftwareVersionService softwareVersionService,
+            AuditLogService auditLogService,
+            MeterRegistry meterRegistry) {
         this.campaignRepository = campaignRepository;
         this.softwareVersionRepository = softwareVersionRepository;
         this.vehicleRepository = vehicleRepository;
@@ -48,6 +55,11 @@ public class RolloutCampaignService {
         this.otaKafkaProducer = otaKafkaProducer;
         this.otaWebSocketService = otaWebSocketService;
         this.softwareVersionService = softwareVersionService;
+        this.auditLogService = auditLogService;
+        this.meterRegistry = meterRegistry;
+        
+        this.meterRegistry.gauge("pulse.rollout.campaigns.active", this.campaignRepository, 
+            repo -> repo.findAll().stream().filter(c -> c.getStatus() == CampaignStatus.IN_PROGRESS).count());
     }
 
     @Transactional
@@ -80,6 +92,7 @@ public class RolloutCampaignService {
         campaign.setStages(stages);
 
         RolloutCampaign saved = campaignRepository.save(campaign);
+        auditLogService.log(currentUser.getId(), "CAMPAIGN_CREATED", "RolloutCampaign", saved.getId().toString(), null);
         return mapToCampaignResponse(saved);
     }
 
@@ -94,6 +107,9 @@ public class RolloutCampaignService {
 
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         RolloutCampaign saved = campaignRepository.save(campaign);
+        
+        UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+        auditLogService.log(actorId, "CAMPAIGN_STARTED", "RolloutCampaign", campaignId.toString(), null);
 
         executeActiveStage(saved);
         return mapToCampaignResponse(saved);
@@ -110,6 +126,9 @@ public class RolloutCampaignService {
 
         campaign.setStatus(CampaignStatus.PAUSED);
         RolloutCampaign saved = campaignRepository.save(campaign);
+        
+        UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+        auditLogService.log(actorId, "CAMPAIGN_PAUSED", "RolloutCampaign", campaignId.toString(), null);
 
         CampaignResponse response = mapToCampaignResponse(saved);
         otaWebSocketService.notifyCampaignProgress(campaignId, response);
@@ -128,6 +147,9 @@ public class RolloutCampaignService {
 
         campaign.setStatus(CampaignStatus.ABORTED);
         RolloutCampaign saved = campaignRepository.save(campaign);
+        
+        UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+        auditLogService.log(actorId, "CAMPAIGN_ABORTED", "RolloutCampaign", campaignId.toString(), null);
 
         CampaignResponse response = mapToCampaignResponse(saved);
         otaWebSocketService.notifyCampaignProgress(campaignId, response);
@@ -276,6 +298,10 @@ public class RolloutCampaignService {
                 log.info("All stages completed for campaign [{}]!", campaign.getId());
                 campaign.setStatus(CampaignStatus.COMPLETED);
                 campaignRepository.save(campaign);
+                
+                UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+                auditLogService.log(actorId, "CAMPAIGN_COMPLETED", "RolloutCampaign", campaign.getId().toString(), null);
+                
                 otaWebSocketService.notifyCampaignProgress(campaign.getId(), mapToCampaignResponse(campaign));
             }
         }

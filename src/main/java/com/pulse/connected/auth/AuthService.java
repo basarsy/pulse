@@ -13,17 +13,21 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
+import com.pulse.connected.common.AuditLogService;
+
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AuditLogService auditLogService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -46,6 +50,7 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(user);
+        auditLogService.log(savedUser.getId(), "USER_REGISTERED", "User", savedUser.getId().toString(), null);
         String accessToken = jwtService.generateAccessToken(savedUser);
         String refreshToken = jwtService.generateRefreshToken(savedUser);
 
@@ -65,6 +70,8 @@ public class AuthService {
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new BadCredentialsException("Invalid email or password");
         }
+        
+        auditLogService.log(user.getId(), "USER_LOGIN", "User", user.getId().toString(), null);
 
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);

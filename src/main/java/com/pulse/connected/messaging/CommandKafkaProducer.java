@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 
 @Service
 public class CommandKafkaProducer {
@@ -21,6 +23,8 @@ public class CommandKafkaProducer {
         this.objectMapper = objectMapper;
     }
 
+    @CircuitBreaker(name = "kafkaCircuitBreaker", fallbackMethod = "dispatchCommandFallback")
+    @Retry(name = "kafkaRetry")
     public void dispatchCommand(VehicleCommandEvent event) {
         try {
             String jsonPayload = objectMapper.writeValueAsString(event);
@@ -40,5 +44,9 @@ public class CommandKafkaProducer {
         } catch (JsonProcessingException e) {
             log.error("Error serializing VehicleCommandEvent [{}]: {}", event.getCommandId(), e.getMessage(), e);
         }
+    }
+    
+    public void dispatchCommandFallback(VehicleCommandEvent event, Throwable t) {
+        log.warn("Fallback triggered for dispatchCommand for command [{}] due to: {}", event.getCommandId(), t.getMessage());
     }
 }

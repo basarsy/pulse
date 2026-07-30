@@ -46,6 +46,12 @@ class RolloutCampaignServiceTest {
     @Mock
     private SoftwareVersionService softwareVersionService;
 
+    @Mock
+    private com.pulse.connected.common.AuditLogService auditLogService;
+
+    @org.mockito.Spy
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     @InjectMocks
     private RolloutCampaignService campaignService;
 

@@ -33,6 +33,9 @@ class VehicleServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private com.pulse.connected.common.AuditLogService auditLogService;
+
     @InjectMocks
     private VehicleService vehicleService;
 

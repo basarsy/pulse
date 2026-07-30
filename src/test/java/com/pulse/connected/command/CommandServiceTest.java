@@ -43,6 +43,12 @@ class CommandServiceTest {
     @Mock
     private CommandWebSocketService webSocketService;
 
+    @Mock
+    private com.pulse.connected.common.AuditLogService auditLogService;
+
+    @org.mockito.Spy
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     @InjectMocks
     private CommandService commandService;
 

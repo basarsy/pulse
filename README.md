@@ -5,9 +5,11 @@
 [![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.7-black.svg)](https://kafka.apache.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7.0-red.svg)](https://redis.io/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-e6522c.svg)](https://prometheus.io/)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboard-orange.svg)](https://grafana.com/)
 [![CI/CD Pipeline](https://github.com/basarsy/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/basarsy/pulse/actions/workflows/ci.yml)
 
-**Pulse** is an enterprise-grade backend simulating a premium automaker's connected-car ecosystem (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels) and **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic safety rollbacks).
+**Pulse** is an enterprise-grade backend simulating a premium automaker's connected-car ecosystem (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic safety rollbacks), and **Telemetry & Observability** (real-time vehicle health ingestion, audit logging, circuit breakers, and Prometheus/Grafana monitoring).
 
 ---
 
@@ -18,6 +20,7 @@ flowchart TB
     subgraph Clients
         A[Owner Mobile/Web Client]
         B[Fleet Admin Dashboard]
+        PROM[Prometheus / Grafana]
     end
 
     subgraph Backend["Spring Boot Modular Monolith"]
@@ -26,6 +29,8 @@ flowchart TB
         CMD[Remote Command Module]
         OTA[OTA / Fleet Module]
         TEL[Telemetry Module]
+        AUDIT[Audit Log Service]
+        ACT[Spring Actuator & Micrometer]
         WS[WebSocket Gateway]
     end
 
@@ -35,14 +40,15 @@ flowchart TB
         KF[(Apache Kafka)]
     end
 
-    SIM[Vehicle Simulator<br/>Mock ECU Client]
+    SIM[Vehicle Simulator v3<br/>Mock ECU Client]
 
     A -->|REST + JWT| Backend
     B -->|REST + JWT| Backend
+    PROM -->|scrape /actuator/prometheus| ACT
     Backend --> PG
     Backend --> RD
     Backend <-->|produce/consume| KF
-    KF <-->|commands / results| SIM
+    KF <-->|commands / results / telemetry| SIM
     WS -->|push command status| A
     WS -->|push rollout progress| B
 ```
@@ -54,9 +60,13 @@ flowchart TB
 - **Modular Monolith Design**: Clean package-by-feature boundaries (`auth`, `vehicle`, `command`, `ota`, `telemetry`, `messaging`, `security`, `websocket`, `common`, `config`).
 - **Asynchronous Command Pattern**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued, dispatched via Kafka, executed asynchronously by vehicles, and pushed in real-time over STOMP WebSockets.
 - **Fleet OTA Updates**: Staged rollouts (5% → 25% → 100%) with failure-rate monitoring and auto-pausing/rollback logic.
+- **Telemetry Ingestion Pipeline**: Real-time vehicle diagnostics (battery/fuel levels, odometer, engine temperatures, GPS coordinates) emitted by simulator, published over Kafka (`vehicle.telemetry`), and persisted in `telemetry_snapshots`.
+- **Fault Tolerance & Resilience**: Resilience4j circuit breakers (`@CircuitBreaker`) and exponential retries (`@Retry`) on Kafka dispatch routines to prevent outage cascades.
+- **Audit Logging**: Asynchronous (`@Async`), fire-and-forget security and business audit logging for sensitive actions (user registration/login, command lifecycle, vehicle registration/authorization, OTA campaign actions) stored in JSONB schema (`audit_log`).
+- **Metrics & Observability**: Custom Micrometer domain counters (`pulse.commands.*`, `pulse.telemetry.ingested`, `pulse.rollout.campaigns.active`), Spring Boot Actuator, Prometheus metric scraping, and preconfigured Grafana container.
 - **Role-Based Access Control (RBAC)**: Enforces granular permissions (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`).
 - **Idempotency & Rate Limiting**: Redis-backed token buckets and key tracking to prevent command spam or duplicated dispatches.
-- **Vehicle Simulator**: Dedicated mock ECU client simulating cellular latency, execution success/failure, and telemetry heartbeats.
+- **Vehicle Simulator v3**: Mock ECU runner generating continuous heartbeats, processing command & OTA execution stages, and periodically emitting telemetry with location drift and battery consumption.
 
 ---
 
@@ -93,10 +103,14 @@ flowchart TB
   - Real-time STOMP WebSockets streaming campaign progress to `/topic/rollouts/{campaignId}` and vehicle updates to `/topic/vehicles/{id}/update-status`
   - Vehicle Simulator (v2) with multi-step download/install simulation and failure injection
   - Unit test suite for `RolloutCampaignService` (14 total tests passing across project)
-- [ ] **Phase 4 — Telemetry & Observability** (Next)
-  - Telemetry ingestion pipeline
-  - Resilience4j circuit breakers & retries
-  - Micrometer / Prometheus / Grafana observability
+- [x] **Phase 4 — Telemetry & Observability**
+  - Telemetry Ingestion Pipeline (`/api/v1/vehicles/{id}/telemetry/latest`, `/history`)
+  - Kafka Telemetry Consumer (`vehicle.telemetry`) & Vehicle Simulator v3 telemetry emission
+  - Resilience4j `@CircuitBreaker` and `@Retry` on `CommandKafkaProducer` and `OtaKafkaProducer`
+  - Asynchronous `@Async` Audit Logging (`AuditLogService`, `AuditLogEntry`, JSONB metadata) across Auth, Vehicle, Command, and OTA modules
+  - Micrometer domain metrics (`pulse.commands.issued`, `pulse.telemetry.ingested`, etc.) and Spring Boot Actuator Prometheus endpoint (`/actuator/prometheus`)
+  - Docker Compose integration with Prometheus (`port 9090`) and Grafana (`port 3000`)
+  - Comprehensive unit tests (`TelemetryServiceTest`, `AuditLogServiceTest`)
 - [ ] **Phase 5 — Stretch Goals**
 
 ---
@@ -108,6 +122,8 @@ flowchart TB
 - **Persistence**: Spring Data JPA, PostgreSQL 16, Flyway
 - **Caching & Rate Limiting**: Redis, Spring Data Redis
 - **Messaging**: Apache Kafka (Spring Kafka)
+- **Fault Tolerance**: Resilience4j (Circuit Breakers, Retries, AOP)
+- **Observability**: Micrometer, Spring Boot Actuator, Prometheus, Grafana
 - **WebSockets**: Spring WebSocket, STOMP
 - **Testing**: JUnit 5, Mockito, Testcontainers
 - **Containers & CI/CD**: Docker, Docker Compose, GitHub Actions (.github/workflows/ci.yml)
@@ -130,11 +146,16 @@ cd pulse
 
 ### 2. Start Infrastructure Services
 
-Spin up PostgreSQL, Redis, and Kafka in the background:
+Spin up PostgreSQL, Redis, Kafka, Prometheus, and Grafana in the background:
 
 ```bash
 docker compose up -d
 ```
+
+Access Monitoring Services:
+- **Prometheus UI**: [http://localhost:9090](http://localhost:9090)
+- **Grafana UI**: [http://localhost:3000](http://localhost:3000) (User: `admin`, Pass: `admin`)
+- **Actuator Metrics**: [http://localhost:8080/actuator/prometheus](http://localhost:8080/actuator/prometheus)
 
 ### 3. Run the Backend Application
 

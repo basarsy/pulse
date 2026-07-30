@@ -52,8 +52,45 @@ pulse:
       expiration-ms: 3600000 # 1 hour
       refresh-expiration-ms: 86400000 # 24 hours
 
+# Actuator & Observability
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# Resilience4j
+resilience4j:
+  circuitbreaker:
+    instances:
+      kafkaCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        minimum-number-of-calls: 5
+  retry:
+    instances:
+      kafkaRetry:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+
 logging:
   level:
     root: INFO
     com.pulse.connected: DEBUG
     org.springframework.security: INFO
+    io.github.resilience4j: INFO

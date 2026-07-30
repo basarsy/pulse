@@ -18,9 +18,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import com.pulse.connected.common.AuditLogService;
 
 @Service
 public class CommandService {
@@ -32,18 +36,24 @@ public class CommandService {
     private final CommandIdempotencyService idempotencyService;
     private final CommandKafkaProducer kafkaProducer;
     private final CommandWebSocketService webSocketService;
+    private final AuditLogService auditLogService;
+    private final MeterRegistry meterRegistry;
 
     public CommandService(
             RemoteCommandRepository commandRepository,
             VehicleRepository vehicleRepository,
             CommandIdempotencyService idempotencyService,
             CommandKafkaProducer kafkaProducer,
-            CommandWebSocketService webSocketService) {
+            CommandWebSocketService webSocketService,
+            AuditLogService auditLogService,
+            MeterRegistry meterRegistry) {
         this.commandRepository = commandRepository;
         this.vehicleRepository = vehicleRepository;
         this.idempotencyService = idempotencyService;
         this.kafkaProducer = kafkaProducer;
         this.webSocketService = webSocketService;
+        this.auditLogService = auditLogService;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional
@@ -78,6 +88,9 @@ public class CommandService {
             idempotencyService.storeIdempotencyKey(request.getIdempotencyKey(), saved.getId());
         }
 
+        meterRegistry.counter("pulse.commands.issued", "type", request.getType().name()).increment();
+        auditLogService.log(currentUser.getId(), "COMMAND_ISSUED", "RemoteCommand", saved.getId().toString(), Map.of("type", request.getType().name(), "vehicleId", vehicleId.toString()));
+
         // Dispatch immediately if vehicle is ONLINE
         if (vehicle.getConnectivityState() == ConnectivityState.ONLINE) {
             dispatchToKafka(saved);
@@ -106,6 +119,14 @@ public class CommandService {
         
         RemoteCommand updated = commandRepository.save(command);
         log.info("Updated command [{}] status to [{}] with message: {}", commandId, resultStatus, resultMessage);
+
+        if (resultStatus == CommandStatus.FAILED) {
+            meterRegistry.counter("pulse.commands.failed").increment();
+            auditLogService.log(command.getIssuedBy().getId(), "COMMAND_FAILED", "RemoteCommand", commandId.toString(), Map.of("resultMessage", resultMessage != null ? resultMessage : ""));
+        } else if (resultStatus == CommandStatus.COMPLETED) {
+            meterRegistry.counter("pulse.commands.completed").increment();
+            auditLogService.log(command.getIssuedBy().getId(), "COMMAND_COMPLETED", "RemoteCommand", commandId.toString(), null);
+        }
 
         CommandResponse response = mapToResponse(updated);
         webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), response);
@@ -138,6 +159,7 @@ public class CommandService {
         command.setResultMessage("Cancelled by user");
 
         RemoteCommand saved = commandRepository.save(command);
+        auditLogService.log(command.getIssuedBy().getId(), "COMMAND_CANCELLED", "RemoteCommand", commandId.toString(), null);
         CommandResponse response = mapToResponse(saved);
         webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), response);
         return response;
@@ -171,6 +193,8 @@ public class CommandService {
             command.setResultMessage("Command execution timed out after 60 seconds");
             
             RemoteCommand updated = commandRepository.save(command);
+            meterRegistry.counter("pulse.commands.timed_out").increment();
+            auditLogService.log(command.getIssuedBy().getId(), "COMMAND_TIMED_OUT", "RemoteCommand", command.getId().toString(), null);
             webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), mapToResponse(updated));
         }
     }

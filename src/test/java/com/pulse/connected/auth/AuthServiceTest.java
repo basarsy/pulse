@@ -33,6 +33,9 @@ class AuthServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private com.pulse.connected.common.AuditLogService auditLogService;
+
     @InjectMocks
     private AuthService authService;
 

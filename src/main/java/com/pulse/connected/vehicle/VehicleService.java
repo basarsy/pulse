@@ -11,18 +11,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import com.pulse.connected.common.AuditLogService;
 
 @Service
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
-    public VehicleService(VehicleRepository vehicleRepository, UserRepository userRepository) {
+    public VehicleService(VehicleRepository vehicleRepository, UserRepository userRepository, AuditLogService auditLogService) {
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -43,6 +48,7 @@ public class VehicleService {
                 .build();
 
         Vehicle saved = vehicleRepository.save(vehicle);
+        auditLogService.log(currentUser.getId(), "VEHICLE_REGISTERED", "Vehicle", saved.getId().toString(), null);
         return mapToResponse(saved);
     }
 
@@ -80,6 +86,10 @@ public class VehicleService {
 
         vehicle.getAuthorizedUsers().add(familyUser);
         Vehicle updated = vehicleRepository.save(vehicle);
+        
+        UUID actorId = vehicle.getOwner() != null ? vehicle.getOwner().getId() : null;
+        auditLogService.log(actorId, "VEHICLE_AUTHORIZED", "Vehicle", vehicleId.toString(), Map.of("authorizedUserEmail", request.getUserEmail()));
+        
         return mapToResponse(updated);
     }
 

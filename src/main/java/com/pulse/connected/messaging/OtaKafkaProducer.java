@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 
 @Service
 public class OtaKafkaProducer {
@@ -21,6 +23,8 @@ public class OtaKafkaProducer {
         this.objectMapper = objectMapper;
     }
 
+    @CircuitBreaker(name = "kafkaCircuitBreaker", fallbackMethod = "dispatchOtaInstructionFallback")
+    @Retry(name = "kafkaRetry")
     public void dispatchOtaInstruction(OtaInstructionEvent event) {
         try {
             String jsonPayload = objectMapper.writeValueAsString(event);
@@ -40,5 +44,9 @@ public class OtaKafkaProducer {
         } catch (JsonProcessingException e) {
             log.error("Error serializing OtaInstructionEvent [{}]: {}", event.getUpdateStatusId(), e.getMessage(), e);
         }
+    }
+    
+    public void dispatchOtaInstructionFallback(OtaInstructionEvent event, Throwable t) {
+        log.warn("Fallback triggered for dispatchOtaInstruction for update status [{}] due to: {}", event.getUpdateStatusId(), t.getMessage());
     }
 }

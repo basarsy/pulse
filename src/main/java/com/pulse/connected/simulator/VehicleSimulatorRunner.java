@@ -8,6 +8,7 @@ import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import com.pulse.connected.messaging.dto.VehicleCommandEvent;
 import com.pulse.connected.messaging.dto.VehicleHeartbeatEvent;
+import com.pulse.connected.messaging.dto.VehicleTelemetryEvent;
 import com.pulse.connected.ota.UpdateStatus;
 import com.pulse.connected.vehicle.ConnectivityState;
 import com.pulse.connected.vehicle.Vehicle;
@@ -154,5 +155,37 @@ public class VehicleSimulatorRunner {
 
         String payload = objectMapper.writeValueAsString(progressEvent);
         kafkaTemplate.send(KafkaTopicConfig.TOPIC_OTA_UPDATE_STATUS, instruction.getVehicleId().toString(), payload);
+    }
+
+    @Scheduled(fixedRate = 20000)
+    public void emitTelemetry() {
+        try {
+            List<Vehicle> vehicles = vehicleRepository.findAll();
+            for (Vehicle vehicle : vehicles) {
+                double newBatteryLevel = Math.max(0.0, (vehicle.getBatteryOrFuelLevel() != null ? vehicle.getBatteryOrFuelLevel() : 100.0) - (0.1 + (0.4 * random.nextDouble())));
+                double newOdometer = (vehicle.getOdometerKm() != null ? vehicle.getOdometerKm() : 0.0) + (0.5 + (1.5 * random.nextDouble()));
+                double engineTemp = 85.0 + (20.0 * random.nextDouble());
+                double lat = 48.177 + (-0.01 + (0.02 * random.nextDouble()));
+                double lng = 11.556 + (-0.01 + (0.02 * random.nextDouble()));
+
+                VehicleTelemetryEvent telemetryEvent = VehicleTelemetryEvent.builder()
+                        .vehicleId(vehicle.getId())
+                        .batteryOrFuelLevel(newBatteryLevel)
+                        .odometerKm(newOdometer)
+                        .engineTempC(engineTemp)
+                        .lat(lat)
+                        .lng(lng)
+                        .timestamp(Instant.now())
+                        .build();
+
+                String payload = objectMapper.writeValueAsString(telemetryEvent);
+                kafkaTemplate.send(KafkaTopicConfig.TOPIC_VEHICLE_TELEMETRY, vehicle.getId().toString(), payload);
+            }
+            if (!vehicles.isEmpty()) {
+                log.debug("Simulator emitted telemetry for {} virtual vehicles.", vehicles.size());
+            }
+        } catch (Exception e) {
+            log.error("Simulator failed to publish telemetry: {}", e.getMessage(), e);
+        }
     }
 }

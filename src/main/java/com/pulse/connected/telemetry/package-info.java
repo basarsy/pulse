@@ -1,4 +1,4 @@
 /**
- * Vehicle telemetry ingestion and historical status module.
+ * Telemetry ingestion module — vehicle health, location, and diagnostic data.
  */
 package com.pulse.connected.telemetry;

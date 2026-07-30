@@ -13,6 +13,7 @@ public class KafkaTopicConfig {
     public static final String TOPIC_VEHICLE_HEARTBEAT = "vehicle.heartbeat";
     public static final String TOPIC_OTA_INSTRUCTIONS = "ota.vehicle-instructions";
     public static final String TOPIC_OTA_UPDATE_STATUS = "ota.vehicle-update-status";
+    public static final String TOPIC_VEHICLE_TELEMETRY = "vehicle.telemetry";
 
     @Bean
     public NewTopic vehicleCommandsTopic() {
@@ -49,6 +50,14 @@ public class KafkaTopicConfig {
     @Bean
     public NewTopic otaUpdateStatusTopic() {
         return TopicBuilder.name(TOPIC_OTA_UPDATE_STATUS)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic vehicleTelemetryTopic() {
+        return TopicBuilder.name(TOPIC_VEHICLE_TELEMETRY)
                 .partitions(3)
                 .replicas(1)
                 .build();
