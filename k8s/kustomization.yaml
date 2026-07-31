@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: pulse
+
+resources:
+  - namespace.yaml
+  - config/app-configmap.yaml
+  - config/app-secrets.yaml
+  - infrastructure/postgres-service.yaml
+  - infrastructure/postgres-statefulset.yaml
+  - infrastructure/redis-service.yaml
+  - infrastructure/redis-deployment.yaml
+  - infrastructure/kafka-service.yaml
+  - infrastructure/kafka-statefulset.yaml
+  - infrastructure/prometheus-configmap.yaml
+  - infrastructure/prometheus-service.yaml
+  - infrastructure/prometheus-deployment.yaml
+  - infrastructure/grafana-service.yaml
+  - infrastructure/grafana-deployment.yaml
+  - services/vehicle-registry-service.yaml
+  - services/vehicle-registry-deployment.yaml
+  - services/command-service-service.yaml
+  - services/command-service-deployment.yaml
+  - services/ota-service-service.yaml
+  - services/ota-service-deployment.yaml
+  - services/gateway-service.yaml
+  - services/gateway-deployment.yaml
+  - dashboard/dashboard-service.yaml
+  - dashboard/dashboard-deployment.yaml
+  - hpa/vehicle-registry-hpa.yaml
+  - hpa/command-service-hpa.yaml
+  - hpa/ota-service-hpa.yaml
+  - ingress.yaml

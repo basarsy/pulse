@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    app: pulse
+    component: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: 'spring-actuator'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets:
+            - 'vehicle-registry:8081'
+            - 'command-service:8082'
+            - 'ota-service:8083'
+            - 'gateway:8080'

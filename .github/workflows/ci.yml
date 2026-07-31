@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test
+    name: Build & Test Multi-Module
     runs-on: ubuntu-latest
 
     steps:
@@ -22,41 +22,46 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven
+      - name: Build Multi-Module Project
         run: mvn clean compile -B
 
       - name: Run Unit & Integration Tests
         run: mvn test -B
 
-      - name: Package JAR Artifact
+      - name: Package Microservices & Monolith
         run: mvn package -DskipTests -B
 
-      - name: Upload Build Artifact
+      - name: Upload Monolith Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pulse-backend-jar
-          path: target/*.jar
+          name: pulse-monolith-jar
+          path: pulse-monolith/target/*.jar
           retention-days: 7
 
-  docker-build:
-    name: Build Docker Image
-    needs: build-and-test
+      - name: Upload Vehicle Registry Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-vehicle-registry-jar
+          path: pulse-vehicle-registry/target/*.jar
+          retention-days: 7
+
+  dashboard-build:
+    name: Build React Dashboard
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image
-        uses: docker/build-push-action@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          context: .
-          push: false
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: pulse-dashboard/package-lock.json
+
+      - name: Install Dashboard Dependencies
+        run: cd pulse-dashboard && npm ci
+
+      - name: Build Dashboard
+        run: cd pulse-dashboard && npm run build

@@ -2,14 +2,19 @@
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Cloud Gateway](https://img.shields.io/badge/Spring%20Cloud-Gateway-blue.svg)](https://spring.io/projects/spring-cloud-gateway)
+[![React](https://img.shields.io/badge/React-18-blue.svg)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-5.0-646CFF.svg)](https://vitejs.dev/)
 [![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.7-black.svg)](https://kafka.apache.org/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-K8s-326CE5.svg)](https://kubernetes.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7.0-red.svg)](https://redis.io/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-e6522c.svg)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboard-orange.svg)](https://grafana.com/)
 [![CI/CD Pipeline](https://github.com/basarsy/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/basarsy/pulse/actions/workflows/ci.yml)
 
-**Pulse** is an enterprise-grade backend simulating a premium automaker's connected-car ecosystem (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic safety rollbacks), and **Telemetry & Observability** (real-time vehicle health ingestion, audit logging, circuit breakers, and Prometheus/Grafana monitoring).
+**Pulse** is an enterprise-grade connected vehicle ecosystem and fleet OTA updates platform (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic safety rollbacks), **Telemetry & Observability** (real-time vehicle health ingestion, audit logging, circuit breakers, and Prometheus/Grafana monitoring), and an **Executive Fleet Dashboard** built with React & TypeScript.
 
 ---
 
@@ -18,52 +23,65 @@
 ```mermaid
 flowchart TB
     subgraph Clients
-        A[Owner Mobile/Web Client]
-        B[Fleet Admin Dashboard]
+        A[Owner Mobile / Web Client]
+        B[React Admin Dashboard - pulse-dashboard]
         PROM[Prometheus / Grafana]
     end
 
-    subgraph Backend["Spring Boot Modular Monolith"]
-        AUTH[Auth Module]
-        VEH[Vehicle Module]
-        CMD[Remote Command Module]
-        OTA[OTA / Fleet Module]
-        TEL[Telemetry Module]
-        AUDIT[Audit Log Service]
-        ACT[Spring Actuator & Micrometer]
-        WS[WebSocket Gateway]
+    subgraph Gateway["API Gateway (pulse-gateway:8080)"]
+        GW[Spring Cloud Gateway]
     end
 
-    subgraph Infra
+    subgraph Microservices["Backend Microservices"]
+        VR[Vehicle Registry Service - 8081]
+        CS[Command Service - 8082]
+        OS[OTA Service - 8083]
+    end
+
+    subgraph Shared["pulse-common Library"]
+        DOM[Shared Domain & Enums]
+        DTO[Kafka Event DTOs]
+        ERR[Global Exception Handling]
+    end
+
+    subgraph Infra["Infrastructure Stack"]
         PG[(PostgreSQL 16)]
         RD[(Redis 7)]
         KF[(Apache Kafka)]
     end
 
-    SIM[Vehicle Simulator v3<br/>Mock ECU Client]
+    SIM[Vehicle Simulator v3]
 
-    A -->|REST + JWT| Backend
-    B -->|REST + JWT| Backend
-    PROM -->|scrape /actuator/prometheus| ACT
-    Backend --> PG
-    Backend --> RD
-    Backend <-->|produce/consume| KF
-    KF <-->|commands / results / telemetry| SIM
-    WS -->|push command status| A
-    WS -->|push rollout progress| B
+    A --> GW
+    B --> GW
+    GW --> VR
+    GW --> CS
+    GW --> OS
+    VR --> PG
+    VR --> RD
+    CS --> PG
+    CS --> RD
+    OS --> PG
+    CS <-->|Kafka| KF
+    OS <-->|Kafka| KF
+    KF <--> SIM
+    CS -->|RestClient| VR
+    OS -->|RestClient| VR
+    PROM -->|scrape actuator| GW
 ```
 
 ---
 
 ## 🚀 Key Capabilities
 
-- **Modular Monolith Design**: Clean package-by-feature boundaries (`auth`, `vehicle`, `command`, `ota`, `telemetry`, `messaging`, `security`, `websocket`, `common`, `config`).
-- **Asynchronous Command Pattern**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued, dispatched via Kafka, executed asynchronously by vehicles, and pushed in real-time over STOMP WebSockets.
-- **Fleet OTA Updates**: Staged rollouts (5% → 25% → 100%) with failure-rate monitoring and auto-pausing/rollback logic.
+- **Maven Multi-Module Architecture**: Clean decoupling into shared library (`pulse-common`), preserved monolith (`pulse-monolith`), standalone microservices (`pulse-vehicle-registry`, `pulse-command-service`, `pulse-ota-service`), and API Gateway (`pulse-gateway`).
+- **Spring Cloud API Gateway**: Centralized routing, CORS management, and WebSocket forwarding on port `8080`.
+- **React 18 & TypeScript Fleet Dashboard**: Premium glassmorphism UI (`pulse-dashboard`) featuring dark mode, live STOMP WebSocket push feeds, fleet status overview, interactive vehicle control panel, telemetry sparklines, and OTA campaign management.
+- **Kubernetes Ready**: Comprehensive `k8s/` manifests including StatefulSets (Postgres, Kafka), Deployments (Redis, microservices, gateway, dashboard), ConfigMaps, Secrets, Horizontal Pod Autoscalers (HPA), and Nginx Ingress rules.
+- **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real-time over STOMP WebSockets.
+- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring and auto-pausing/rollback logic.
 - **Telemetry Ingestion Pipeline**: Real-time vehicle diagnostics (battery/fuel levels, odometer, engine temperatures, GPS coordinates) emitted by simulator, published over Kafka (`vehicle.telemetry`), and persisted in `telemetry_snapshots`.
 - **Fault Tolerance & Resilience**: Resilience4j circuit breakers (`@CircuitBreaker`) and exponential retries (`@Retry`) on Kafka dispatch routines to prevent outage cascades.
-- **Audit Logging**: Asynchronous (`@Async`), fire-and-forget security and business audit logging for sensitive actions (user registration/login, command lifecycle, vehicle registration/authorization, OTA campaign actions) stored in JSONB schema (`audit_log`).
-- **Metrics & Observability**: Custom Micrometer domain counters (`pulse.commands.*`, `pulse.telemetry.ingested`, `pulse.rollout.campaigns.active`), Spring Boot Actuator, Prometheus metric scraping, and preconfigured Grafana container.
 - **Role-Based Access Control (RBAC)**: Enforces granular permissions (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`).
 - **Idempotency & Rate Limiting**: Redis-backed token buckets and key tracking to prevent command spam or duplicated dispatches.
 - **Vehicle Simulator v3**: Mock ECU runner generating continuous heartbeats, processing command & OTA execution stages, and periodically emitting telemetry with location drift and battery consumption.
@@ -77,7 +95,6 @@ flowchart TB
   - Modular package structure
   - Flyway database migration baseline (`V1__init_schema.sql`)
   - Infrastructure setup (`docker-compose.yml` with Postgres 16, Redis 7, Kafka in KRaft mode)
-  - Git repository initialization and GitHub remote integration
 - [x] **Phase 1 — Auth & Vehicle Core**
   - User registration (`/api/v1/auth/register`) & login (`/api/v1/auth/login`) with BCrypt password hashing
   - Stateless JWT access and refresh token issuance & validation (`JwtService`, `JwtAuthenticationFilter`)
@@ -111,22 +128,27 @@ flowchart TB
   - Micrometer domain metrics (`pulse.commands.issued`, `pulse.telemetry.ingested`, etc.) and Spring Boot Actuator Prometheus endpoint (`/actuator/prometheus`)
   - Docker Compose integration with Prometheus (`port 9090`) and Grafana (`port 3000`)
   - Comprehensive unit tests (`TelemetryServiceTest`, `AuditLogServiceTest`)
-- [ ] **Phase 5 — Stretch Goals**
+- [x] **Phase 5 — Stretch Goals: Microservices, Kubernetes & React Dashboard**
+  - **Sub-Phase 5A**: Maven multi-module restructuring (`pulse-common`, `pulse-monolith`)
+  - **Sub-Phase 5B**: Microservices split (`pulse-vehicle-registry`, `pulse-command-service`, `pulse-ota-service`, `pulse-gateway`)
+  - **Sub-Phase 5C**: Kubernetes manifests (`k8s/` directory with Deployments, StatefulSets, HPAs, and Ingress)
+  - **Sub-Phase 5D**: Executive Fleet Dashboard (`pulse-dashboard` - React 18, Vite, TypeScript, CSS custom tokens, glassmorphism UI)
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Language / Framework**: Java 21, Spring Boot 3.3.5
-- **Security**: Spring Security, JJWT
+- **Backend**: Java 21, Spring Boot 3.3.5, Spring Cloud Gateway 2023.0.3
+- **Frontend**: React 18, TypeScript 5, Vite 5, STOMP / SockJS, Vanilla CSS (Glassmorphism design system)
+- **Security**: Spring Security, JJWT 0.12.6
 - **Persistence**: Spring Data JPA, PostgreSQL 16, Flyway
-- **Caching & Rate Limiting**: Redis, Spring Data Redis
-- **Messaging**: Apache Kafka (Spring Kafka)
-- **Fault Tolerance**: Resilience4j (Circuit Breakers, Retries, AOP)
+- **Caching & Rate Limiting**: Redis 7, Spring Data Redis
+- **Messaging**: Apache Kafka 3.7 (KRaft mode)
+- **Fault Tolerance**: Resilience4j 2.2.0 (Circuit Breakers, Retries, AOP)
 - **Observability**: Micrometer, Spring Boot Actuator, Prometheus, Grafana
 - **WebSockets**: Spring WebSocket, STOMP
-- **Testing**: JUnit 5, Mockito, Testcontainers
-- **Containers & CI/CD**: Docker, Docker Compose, GitHub Actions (.github/workflows/ci.yml)
+- **Containerization & Orchestration**: Docker, Docker Compose, Kubernetes (K8s manifests & HPA)
+- **CI/CD**: GitHub Actions (.github/workflows/ci.yml)
 
 ---
 
@@ -135,6 +157,7 @@ flowchart TB
 ### Prerequisites
 
 - Java 21+
+- Node.js 20+
 - Docker & Docker Compose
 
 ### 1. Clone the Repository
@@ -144,25 +167,23 @@ git clone https://github.com/basarsy/pulse.git
 cd pulse
 ```
 
-### 2. Start Infrastructure Services
+### 2. Start Microservices Stack via Docker Compose
 
-Spin up PostgreSQL, Redis, Kafka, Prometheus, and Grafana in the background:
-
-```bash
-docker compose up -d
-```
-
-Access Monitoring Services:
-- **Prometheus UI**: [http://localhost:9090](http://localhost:9090)
-- **Grafana UI**: [http://localhost:3000](http://localhost:3000) (User: `admin`, Pass: `admin`)
-- **Actuator Metrics**: [http://localhost:8080/actuator/prometheus](http://localhost:8080/actuator/prometheus)
-
-### 3. Run the Backend Application
+Run the entire microservice ecosystem locally:
 
 ```bash
-./mvnw spring-boot:run
+docker compose -f docker-compose.microservices.yml up -d
 ```
-*(On Windows Command Prompt / PowerShell, use `mvnw.cmd spring-boot:run`)*
+
+### 3. Run React Dashboard Locally
+
+```bash
+cd pulse-dashboard
+npm install
+npm run dev
+```
+
+Dashboard will be available at [http://localhost:5173](http://localhost:5173).
 
 ---
 

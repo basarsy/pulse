@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # Infrastructure (same as docker-compose.yml)
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: pulse_db
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  kafka:
+    image: apache/kafka:3.7.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: pulse-kafka-cluster-001
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus-microservices.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - prometheus
+
+  # Microservices
+  vehicle-registry:
+    build: ./pulse-vehicle-registry
+    ports:
+      - "8081:8081"
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/pulse_db
+      DB_USER: pulse
+      DB_PASS: pulse_password
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:9092
+      SIMULATOR_ENABLED: "true"
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+
+  command-service:
+    build: ./pulse-command-service
+    ports:
+      - "8082:8082"
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/pulse_db
+      DB_USER: pulse
+      DB_PASS: pulse_password
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:9092
+      VEHICLE_REGISTRY_URL: http://vehicle-registry:8081
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - vehicle-registry
+
+  ota-service:
+    build: ./pulse-ota-service
+    ports:
+      - "8083:8083"
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/pulse_db
+      DB_USER: pulse
+      DB_PASS: pulse_password
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:9092
+      VEHICLE_REGISTRY_URL: http://vehicle-registry:8081
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - vehicle-registry
+
+  gateway:
+    build: ./pulse-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      VEHICLE_REGISTRY_URL: http://vehicle-registry:8081
+      COMMAND_SERVICE_URL: http://command-service:8082
+      OTA_SERVICE_URL: http://ota-service:8083
+      VEHICLE_REGISTRY_WS_URL: ws://vehicle-registry:8081
+    depends_on:
+      - vehicle-registry
+      - command-service
+      - ota-service
+
+  dashboard:
+    build: ./pulse-dashboard
+    ports:
+      - "3001:80"
+    depends_on:
+      - gateway
+
+volumes:
+  postgres_data:

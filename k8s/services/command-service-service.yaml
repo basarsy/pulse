@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: command-service
+  labels:
+    app: pulse
+    component: command-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8082
+      targetPort: 8082
+  selector:
+    app: pulse
+    component: command-service

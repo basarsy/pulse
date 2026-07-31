@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  labels:
+    app: pulse
+    component: dashboard
+    version: latest
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pulse
+      component: dashboard
+  template:
+    metadata:
+      labels:
+        app: pulse
+        component: dashboard
+        version: latest
+    spec:
+      containers:
+        - name: dashboard
+          image: pulse-dashboard:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"

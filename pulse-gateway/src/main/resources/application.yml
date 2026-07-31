@@ -1,0 +1,86 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pulse-gateway
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: false
+      routes:
+        # Auth routes -> vehicle-registry
+        - id: auth-service
+          uri: ${VEHICLE_REGISTRY_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/auth/**
+        
+        # User routes -> vehicle-registry  
+        - id: user-service
+          uri: ${VEHICLE_REGISTRY_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/users/**
+
+        # Command routes -> command-service (must be before general vehicle routes)
+        - id: command-service-vehicle-commands
+          uri: ${COMMAND_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/vehicles/{vehicleId}/commands/**
+        
+        - id: command-service-commands
+          uri: ${COMMAND_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/commands/**
+
+        # OTA routes -> ota-service  
+        - id: ota-software-versions
+          uri: ${OTA_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/software-versions/**,/api/v1/ota/software-versions/**
+
+        - id: ota-rollouts
+          uri: ${OTA_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/rollouts/**,/api/v1/ota/campaigns/**
+
+        - id: ota-vehicle-updates
+          uri: ${OTA_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/vehicles/{vehicleId}/update-status,/api/v1/ota/vehicles/**
+        
+        # Fleet routes -> vehicle-registry
+        - id: fleet-service
+          uri: ${VEHICLE_REGISTRY_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/fleet/**
+
+        # Vehicle routes -> vehicle-registry (general, must be LAST)
+        - id: vehicle-service
+          uri: ${VEHICLE_REGISTRY_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/vehicles/**
+
+        # WebSocket routes
+        - id: ws-vehicle-registry
+          uri: ${VEHICLE_REGISTRY_WS_URL:ws://localhost:8081}
+          predicates:
+            - Path=/ws/**,/ws-pulse/**
+
+        # Actuator routes for monitoring
+        - id: vehicle-registry-actuator
+          uri: ${VEHICLE_REGISTRY_URL:http://localhost:8081}
+          predicates:
+            - Path=/vehicle-registry/actuator/**
+          filters:
+            - StripPrefix=1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
