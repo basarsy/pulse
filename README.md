@@ -14,11 +14,18 @@
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboard-orange.svg)](https://grafana.com/)
 [![CI/CD Pipeline](https://github.com/basarsy/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/basarsy/pulse/actions/workflows/ci.yml)
 
-**Pulse** is an enterprise-grade connected vehicle ecosystem and fleet OTA updates platform (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic safety rollbacks), **Telemetry & Observability** (real-time vehicle health ingestion, audit logging, circuit breakers, and Prometheus/Grafana monitoring), and an **Executive Fleet Dashboard** built with React & TypeScript.
+**Pulse** is an enterprise-grade connected vehicle ecosystem and fleet OTA updates platform (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software package releases, staged canary rollouts, and automatic pausing when too many updates fail), **Telemetry & Observability** (real-time vehicle health ingestion, audit logging, circuit breakers, and Prometheus/Grafana monitoring), and an **Executive Fleet Dashboard** built with React & TypeScript.
 
 ---
 
 ## 🏗️ System Architecture
+
+Pulse was built in two stages:
+
+1. **Modular monolith (`pulse-monolith`)**: the original version. It contains all features: auth, vehicle commands, OTA rollouts, telemetry, Kafka, Redis and WebSockets.
+2. **Microservices split**: an extension where the monolith was split into vehicle-registry, command and OTA services behind an API gateway, with Kubernetes manifests and a React dashboard.
+
+The monolith is the main reference version. The microservices are a second step to compare the two styles. The diagram below shows the microservices version.
 
 ```mermaid
 flowchart TB
@@ -79,7 +86,7 @@ flowchart TB
 - **React 18 & TypeScript Fleet Dashboard**: Premium glassmorphism UI (`pulse-dashboard`) featuring dark mode, live STOMP WebSocket push feeds, fleet status overview, interactive vehicle control panel, telemetry sparklines, and OTA campaign management.
 - **Kubernetes Ready**: Comprehensive `k8s/` manifests including StatefulSets (Postgres, Kafka), Deployments (Redis, microservices, gateway, dashboard), ConfigMaps, Secrets, Horizontal Pod Autoscalers (HPA), and Nginx Ingress rules.
 - **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real-time over STOMP WebSockets.
-- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring and auto-pausing/rollback logic.
+- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses the rollout if the failure rate goes over a set threshold.
 - **Telemetry Ingestion Pipeline**: Real-time vehicle diagnostics (battery/fuel levels, odometer, engine temperatures, GPS coordinates) emitted by simulator, published over Kafka (`vehicle.telemetry`), and persisted in `telemetry_snapshots`.
 - **Fault Tolerance & Resilience**: Resilience4j circuit breakers (`@CircuitBreaker`) and exponential retries (`@Retry`) on Kafka dispatch routines to prevent outage cascades.
 - **Role-Based Access Control (RBAC)**: Enforces granular permissions (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`).
@@ -167,7 +174,16 @@ git clone https://github.com/basarsy/pulse.git
 cd pulse
 ```
 
-### 2. Start Microservices Stack via Docker Compose
+### 2a. Run the Monolith (original version)
+
+Start the infrastructure (Postgres, Redis, Kafka, Prometheus, Grafana), then run the monolith:
+
+```bash
+docker compose up -d
+./mvnw -pl pulse-monolith -am spring-boot:run
+```
+
+### 2b. Or Start the Microservices Stack via Docker Compose
 
 Run the entire microservice ecosystem locally:
 
