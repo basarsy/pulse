@@ -4,7 +4,6 @@ import com.pulse.connected.messaging.KafkaTopics;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.domain.CommandStatus;
-import com.pulse.connected.messaging.KafkaTopicConfig;
 import com.pulse.connected.messaging.dto.CommandResultEvent;
 import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
@@ -17,6 +16,7 @@ import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -38,16 +38,32 @@ public class VehicleSimulatorRunner {
     private final ObjectMapper objectMapper;
     private final Random random = new Random();
 
+    private final double commandFailureRate;
+    private final double otaFailureRate;
+    private final int minLatencyMs;
+    private final int latencyJitterMs;
+    private final long otaStepDelayMs;
+
     public VehicleSimulatorRunner(
             VehicleRepository vehicleRepository,
             KafkaTemplate<String, String> kafkaTemplate,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            @Value("${pulse.simulator.command-failure-rate:0.05}") double commandFailureRate,
+            @Value("${pulse.simulator.ota-failure-rate:0.10}") double otaFailureRate,
+            @Value("${pulse.simulator.min-latency-ms:1000}") int minLatencyMs,
+            @Value("${pulse.simulator.latency-jitter-ms:1500}") int latencyJitterMs,
+            @Value("${pulse.simulator.ota-step-delay-ms:500}") long otaStepDelayMs) {
         this.vehicleRepository = vehicleRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.commandFailureRate = commandFailureRate;
+        this.otaFailureRate = otaFailureRate;
+        this.minLatencyMs = minLatencyMs;
+        this.latencyJitterMs = latencyJitterMs;
+        this.otaStepDelayMs = otaStepDelayMs;
     }
 
-    @Scheduled(fixedRate = 15000)
+    @Scheduled(fixedRateString = "${pulse.simulator.heartbeat-interval-ms:15000}")
     public void sendHeartbeats() {
         try {
             List<Vehicle> vehicles = vehicleRepository.findAll();
@@ -77,12 +93,12 @@ public class VehicleSimulatorRunner {
             log.info("Simulator [Vehicle {}] received command [{}] type [{}]",
                     event.getVehicleId(), event.getCommandId(), event.getType());
 
-            // Simulate cellular latency delay (1-2.5s)
-            int delayMs = 1000 + random.nextInt(1500);
+            // Simulate cellular latency
+            int delayMs = minLatencyMs + random.nextInt(latencyJitterMs + 1);
             Thread.sleep(delayMs);
 
-            // 95% success, 5% failure simulation
-            boolean success = random.nextDouble() > 0.05;
+            // Simulated ECU failure
+            boolean success = random.nextDouble() >= commandFailureRate;
             CommandStatus resultStatus = success ? CommandStatus.COMPLETED : CommandStatus.FAILED;
             String resultMessage = success ?
                     "Executed " + event.getType() + " command successfully on ECU" :
@@ -115,19 +131,19 @@ public class VehicleSimulatorRunner {
 
             // 1. Downloading 25%
             publishOtaProgress(instruction, UpdateStatus.DOWNLOADING, 25, null);
-            Thread.sleep(500);
+            Thread.sleep(otaStepDelayMs);
 
             // 2. Downloading 100% -> Downloaded
             publishOtaProgress(instruction, UpdateStatus.DOWNLOADING, 100, null);
             publishOtaProgress(instruction, UpdateStatus.DOWNLOADED, 100, null);
-            Thread.sleep(500);
+            Thread.sleep(otaStepDelayMs);
 
             // 3. Installing 50%
             publishOtaProgress(instruction, UpdateStatus.INSTALLING, 50, null);
-            Thread.sleep(500);
+            Thread.sleep(otaStepDelayMs);
 
-            // 4. 90% success, 10% failure simulation
-            boolean success = random.nextDouble() > 0.10;
+            // 4. Simulated flashing failure
+            boolean success = random.nextDouble() >= otaFailureRate;
 
             if (success) {
                 publishOtaProgress(instruction, UpdateStatus.INSTALLED, 100, null);
@@ -159,7 +175,7 @@ public class VehicleSimulatorRunner {
         kafkaTemplate.send(KafkaTopics.OTA_UPDATE_STATUS, instruction.getVehicleId().toString(), payload);
     }
 
-    @Scheduled(fixedRate = 20000)
+    @Scheduled(fixedRateString = "${pulse.simulator.telemetry-interval-ms:20000}")
     public void emitTelemetry() {
         try {
             List<Vehicle> vehicles = vehicleRepository.findAll();
