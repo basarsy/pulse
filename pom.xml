@@ -27,6 +27,8 @@
         <jjwt.version>0.12.6</jjwt.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <spring-modulith.version>1.2.5</spring-modulith.version>
+        <!-- Overrides Boot's managed 1.19.x, whose Docker API (1.32) is rejected by Docker Engine 29+ -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
