@@ -6,8 +6,10 @@ scrape_configs:
   - job_name: 'pulse-app'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      # 'app' when the whole stack runs in Docker Compose,
-      # 'host.docker.internal' when the app runs on the host (IDE / spring-boot:run).
-      - targets: ['app:8080', 'host.docker.internal:8080']
+      # The app container in Docker Compose. When running the app from your IDE instead, replace
+      # the target with 'host.docker.internal:8080'. Do not list both: while the app container is
+      # running, host.docker.internal:8080 reaches the same process via its published port and
+      # every series would be scraped twice.
+      - targets: ['app:8080']
         labels:
           application: 'pulse-app'
