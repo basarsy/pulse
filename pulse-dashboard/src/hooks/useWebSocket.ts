@@ -8,7 +8,7 @@ export function useWebSocket() {
   const { addNotification } = useNotifications();
 
   useEffect(() => {
-    const socket = new SockJS('http://localhost:8080/ws-pulse');
+    const socket = new SockJS('/ws-pulse');
     const client = new Client({
       webSocketFactory: () => socket,
       reconnectDelay: 5000,

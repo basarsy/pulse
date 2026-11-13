@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:8080/api/v1';
+// Same-origin: proxied by Vite in dev, by nginx in Docker and by the ingress in Kubernetes.
+const API_URL = '/api/v1';
 
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem('accessToken');

@@ -21,7 +21,10 @@ spec:
     spec:
       containers:
         - name: dashboard
-          image: pulse-dashboard:latest
+          image: pulse-dashboard:0.0.1-SNAPSHOT
+          env:
+            - name: API_UPSTREAM
+              value: "http://pulse-app:8080"
           ports:
             - containerPort: 80
           resources:
