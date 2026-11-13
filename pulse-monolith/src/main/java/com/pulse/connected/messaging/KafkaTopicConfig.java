@@ -4,9 +4,26 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.core.KafkaAdmin;
 
 @Configuration
 public class KafkaTopicConfig {
+
+    private static final int PARTITIONS = 3;
+
+    /**
+     * Dead-letter topics for every consumed topic. They have the same partition count as their
+     * source topic because the dead-letter recoverer keeps the original partition.
+     */
+    @Bean
+    public KafkaAdmin.NewTopics deadLetterTopics() {
+        return new KafkaAdmin.NewTopics(KafkaTopics.CONSUMED.stream()
+                .map(topic -> TopicBuilder.name(KafkaTopics.deadLetter(topic))
+                        .partitions(PARTITIONS)
+                        .replicas(1)
+                        .build())
+                .toArray(NewTopic[]::new));
+    }
 
     @Bean
     public NewTopic vehicleCommandsTopic() {

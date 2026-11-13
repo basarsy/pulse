@@ -2,6 +2,7 @@ package com.pulse.connected.telemetry;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.messaging.dto.VehicleTelemetryEvent;
 import org.slf4j.Logger;
@@ -23,13 +24,10 @@ public class TelemetryKafkaConsumer {
     }
 
     @KafkaListener(topics = KafkaTopics.VEHICLE_TELEMETRY, groupId = "backend-service-group")
-    public void consumeTelemetry(String message) {
-        try {
-            VehicleTelemetryEvent event = objectMapper.readValue(message, VehicleTelemetryEvent.class);
-            telemetryService.ingestTelemetry(event);
-            log.debug("Consumed telemetry event for vehicle: {}", event.getVehicleId());
-        } catch (Exception e) {
-            log.error("Failed to process telemetry message: {}", message, e);
-        }
+    public void consumeTelemetry(String message) throws JsonProcessingException {
+        // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
+        VehicleTelemetryEvent event = objectMapper.readValue(message, VehicleTelemetryEvent.class);
+        telemetryService.ingestTelemetry(event);
+        log.debug("Consumed telemetry event for vehicle: {}", event.getVehicleId());
     }
 }
