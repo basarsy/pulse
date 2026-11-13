@@ -33,6 +33,9 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+                // WebSocket/SockJS handshake: authentication happens on the STOMP CONNECT frame
+                // (see websocket.StompAuthChannelInterceptor), as browsers cannot set headers here.
+                .requestMatchers("/ws-pulse/**").permitAll()
                 // Probes and the Prometheus scrape are public; keep /actuator off the public ingress.
                 .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                 .anyRequest().authenticated()
