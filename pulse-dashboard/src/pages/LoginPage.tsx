@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../api/client';
 import Button from '../components/Button';
 
 export default function LoginPage() {
@@ -9,19 +8,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  if (isAuthenticated) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const res = await api.post('/auth/login', { email, password });
-      login(res.accessToken);
+      await login(email, password);
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -34,7 +34,7 @@ export default function LoginPage() {
     }}>
       <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '2.5rem' }}>
         <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Sign in to <span className="text-gradient">Pulse</span></h2>
-        
+
         {error && <div style={{ color: 'var(--color-danger)', marginBottom: '1rem', textAlign: 'center' }}>{error}</div>}
 
         <form onSubmit={handleSubmit}>
@@ -48,7 +48,7 @@ export default function LoginPage() {
           </div>
           <Button type="submit" style={{ width: '100%' }} isLoading={loading}>Sign In</Button>
         </form>
-        
+
         <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>
           Don't have an account? <Link to="/register">Register</Link>
         </div>

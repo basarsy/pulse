@@ -1,10 +1,13 @@
-import React from 'react';
 import NotificationBell from './NotificationBell';
-import { useAuth } from '../context/AuthContext';
 import Button from './Button';
+import { useAuth } from '../context/AuthContext';
+import { useLive } from '../context/LiveContext';
+import { label } from '../utils/format';
 
 export default function Header() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const { connected } = useLive();
+  const initials = (user?.fullName ?? '?').split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <header style={{
@@ -16,14 +19,24 @@ export default function Header() {
       padding: '0 2rem',
       backgroundColor: 'var(--color-bg-primary)'
     }}>
-      <div>
-        <input type="text" placeholder="Search..." className="form-input" style={{ width: '300px', padding: '0.5rem 1rem', borderRadius: 'var(--radius-full)' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+        <span style={{
+          width: '8px', height: '8px', borderRadius: '50%',
+          backgroundColor: connected ? 'var(--color-success)' : 'var(--color-warning)'
+        }} />
+        {connected ? 'Live updates connected' : 'Connecting to live updates…'}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
         <NotificationBell />
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{user?.fullName}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+              {user?.roles.map(label).join(', ')}
+            </div>
+          </div>
           <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--color-accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-            A
+            {initials}
           </div>
           <Button variant="ghost" size="sm" onClick={logout}>Logout</Button>
         </div>

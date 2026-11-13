@@ -1,12 +1,13 @@
-import React from 'react';
+import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 
 export default function Sidebar() {
   const location = useLocation();
+  const { isAdmin } = useAuth();
   const links = [
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/vehicles', label: 'Vehicles', icon: '🚗' },
-    { path: '/rollouts', label: 'OTA Updates', icon: '☁️' }
+    ...(isAdmin ? [{ path: '/rollouts', label: 'OTA Updates', icon: '☁️' }] : [])
   ];
 
   return (
