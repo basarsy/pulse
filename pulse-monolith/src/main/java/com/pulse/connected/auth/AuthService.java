@@ -35,17 +35,12 @@ public class AuthService {
             throw new DuplicateResourceException("Email '" + request.getEmail() + "' is already registered");
         }
 
-        Set<Role> roles = request.getRoles();
-        if (roles == null || roles.isEmpty()) {
-            roles = new HashSet<>();
-            roles.add(Role.OWNER);
-        }
-
+        // Self-registration always yields an OWNER; privileged roles are never caller-controlled.
         User user = User.builder()
                 .email(request.getEmail().toLowerCase())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .roles(roles)
+                .roles(new HashSet<>(Set.of(Role.OWNER)))
                 .build();
 
         User savedUser = userRepository.save(user);
