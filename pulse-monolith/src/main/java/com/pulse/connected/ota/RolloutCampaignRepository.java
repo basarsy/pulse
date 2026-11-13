@@ -14,4 +14,6 @@ public interface RolloutCampaignRepository extends JpaRepository<RolloutCampaign
     List<RolloutCampaign> findAllByStatus(CampaignStatus status);
 
     List<RolloutCampaign> findAllByOrderByCreatedAtDesc();
+
+    long countByStatus(CampaignStatus status);
 }

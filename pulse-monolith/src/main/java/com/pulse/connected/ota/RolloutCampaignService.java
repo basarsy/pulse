@@ -62,8 +62,9 @@ public class RolloutCampaignService {
         this.auditLogService = auditLogService;
         this.meterRegistry = meterRegistry;
         
-        this.meterRegistry.gauge("pulse.rollout.campaigns.active", this.campaignRepository, 
-            repo -> repo.findAll().stream().filter(c -> c.getStatus() == CampaignStatus.IN_PROGRESS).count());
+        // COUNT query per scrape (previously loaded every campaign on each Prometheus scrape).
+        this.meterRegistry.gauge("pulse.rollout.campaigns.active", this.campaignRepository,
+            repo -> repo.countByStatus(CampaignStatus.IN_PROGRESS));
     }
 
     @Transactional
@@ -191,6 +192,9 @@ public class RolloutCampaignService {
         } else if (event.getStatus() == UpdateStatus.FAILED || event.getStatus() == UpdateStatus.ROLLED_BACK) {
             updateStatus.setCompletedAt(Instant.now());
             updateStatus.setErrorMessage(event.getErrorMessage() != null ? event.getErrorMessage() : "Installation failed");
+        }
+        if (updateStatus.isFinished()) {
+            meterRegistry.counter("pulse.ota.updates.finished", "result", event.getStatus().name()).increment();
         }
 
         VehicleUpdateStatus savedStatus = vehicleUpdateStatusRepository.save(updateStatus);

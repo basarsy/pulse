@@ -7,6 +7,7 @@ import com.pulse.connected.auth.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
@@ -33,6 +34,9 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Test
     void commandToOnlineVehicleCompletesThroughKafka() throws Exception {
@@ -92,6 +96,8 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
             assertThat(campaign.get("vehiclesFailed").asLong()).isZero();
         });
         assertOutboxDrained();
+        assertThat(meterRegistry.get("pulse.ota.updates.finished").tag("result", "INSTALLED").counter().count())
+                .isGreaterThanOrEqualTo(2);
 
         JsonNode campaigns = getJson(token, "/api/v1/rollouts");
         assertThat(campaigns.findValuesAsText("id")).contains(campaignId);
@@ -101,6 +107,8 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
     private void assertOutboxDrained() {
         await().atMost(TIMEOUT).untilAsserted(() -> assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM event_publication WHERE completion_date IS NULL", Integer.class)).isZero());
+        // The backlog is exported for monitoring.
+        assertThat(meterRegistry.get("pulse.outbox.incomplete").gauge().value()).isZero();
     }
 
     private String issueCommand(String token, String vehicleId, String type) throws Exception {
