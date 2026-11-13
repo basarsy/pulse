@@ -348,6 +348,13 @@ public class RolloutCampaignService {
     }
 
     @Transactional(readOnly = true)
+    public List<CampaignResponse> listCampaigns() {
+        return campaignRepository.findAllByOrderByCreatedAtDesc().stream()
+                .map(this::mapToCampaignResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public CampaignResponse getCampaignDetails(UUID campaignId) {
         RolloutCampaign campaign = campaignRepository.findById(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));

@@ -49,6 +49,13 @@ class ApplicationSmokeTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void ownersCannotListRolloutCampaigns() throws Exception {
+        mvc.perform(get("/api/v1/rollouts")
+                        .header("Authorization", "Bearer " + registerAndGetToken("owner")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void refreshTokenIsNotAcceptedAsBearerToken() throws Exception {
         JsonNode auth = register(uniqueEmail("refresh"));
 

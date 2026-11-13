@@ -92,6 +92,9 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
             assertThat(campaign.get("vehiclesFailed").asLong()).isZero();
         });
         assertOutboxDrained();
+
+        JsonNode campaigns = getJson(token, "/api/v1/rollouts");
+        assertThat(campaigns.findValuesAsText("id")).contains(campaignId);
     }
 
     /** Every outbox publication (command / OTA instruction) must eventually be sent to Kafka. */
