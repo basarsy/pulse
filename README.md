@@ -77,7 +77,8 @@ flowchart LR
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
 - **Idempotency & Rate Limiting**: Redis-backed, per-user idempotency keys and a fixed-window rate limit (10 commands/min, `429` when exceeded).
 - **Reliable Messaging**: Transactional outbox for everything sent to vehicles, retries with backoff and dead-letter topics for everything received, plus Resilience4j circuit breaker and retry on Kafka sends.
-- **Observability**: Asynchronous audit log, Micrometer domain metrics, Prometheus & Grafana.
+- **Live Fleet Dashboard**: React app with live command status, OTA rollout planning and progress over authenticated WebSockets (STOMP), with per-vehicle subscription authorisation.
+- **Observability**: Asynchronous audit log, Micrometer domain metrics (including outbox backlog and dead letters), Prometheus and a provisioned Grafana dashboard.
 - **Vehicle Simulator**: Mock ECU that emits heartbeats and telemetry and executes commands and OTA updates (enable with `SIMULATOR_ENABLED=true` or the `local` profile).
 - **Kubernetes Ready**: Kustomize manifests for the app, dashboard, Postgres, Kafka, Redis, Prometheus, Grafana and an Nginx ingress; secrets are generated from a git-ignored env file.
 
@@ -125,11 +126,16 @@ flowchart LR
   - Consumer retries with exponential backoff and dead-letter topics (`<topic>.DLT`) instead of silently dropped messages
   - Staged rollouts: per-stage failure evaluation, no re-instruction of earlier-stage vehicles, forward-only update status transitions, optimistic locking on campaigns
   - `KafkaRoundTripTest` drives commands and a multi-stage rollout through Kafka and the simulator end to end
+- [x] **Phase 8 — Live dashboard & observability**
+  - STOMP connections authenticated with the access token; every subscription authorised (vehicle topics per vehicle, rollout/wildcard topics for admins)
+  - Dashboard wired to the API: vehicles, live command status, telemetry and OTA history, rollout planning and live progress; silent token refresh
+  - Missing/expired tokens return 401 (so clients can refresh) and authorisation failures 403
+  - Provisioned Grafana dashboard plus metrics for outbox backlog, dead letters and OTA outcomes
 - [ ] **Next**
-  - Wire the dashboard's vehicle, rollout and dashboard pages to the API (they currently show sample data) and use refresh tokens
-  - Authenticate STOMP connections with the JWT and authorize topic subscriptions per vehicle
   - Make the app safe to scale out: ShedLock for `@Scheduled` jobs and an external STOMP broker relay
   - Device authentication for vehicles (mTLS / device credentials)
+  - Grafana provisioning for the Kubernetes manifests (currently Docker Compose only) and alert rules (outbox backlog, dead letters)
+  - Browser end-to-end tests for the dashboard (Playwright)
 
 ---
 
@@ -182,7 +188,7 @@ docker compose up --build
 | Dashboard | http://localhost:3001 |
 | API | http://localhost:8080/api/v1 |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 |
+| Grafana (dashboard "Pulse Overview") | http://localhost:3000 |
 
 ### Option B: app from your IDE / Maven, infrastructure in Docker
 
@@ -201,13 +207,26 @@ npm install
 npm run dev
 ```
 
+### Fleet admin for local development
+
+Self-registration always creates an `OWNER`; admin roles cannot be granted through the API. To try the OTA pages locally, register in the dashboard and then promote that user in the dev database:
+
+```bash
+docker exec pulse-postgres psql -U pulse -d pulse_db -c \
+  "INSERT INTO user_roles (user_id, role_id) SELECT id, 'FLEET_ADMIN' FROM users WHERE email = 'you@example.com';"
+```
+
+Sign out and back in (or reload) to pick up the role.
+
+When the app runs from your IDE (Option B), point Prometheus at it by changing the target in `prometheus.yml` to `host.docker.internal:8080`.
+
 ### Tests
 
 ```bash
 ./mvnw verify
 ```
 
-Runs unit tests, the Spring Modulith boundary verification and the Testcontainers smoke test (Docker required).
+Runs unit tests, the Spring Modulith boundary verification and the integration tests (real Postgres and Redis via Testcontainers, embedded Kafka, real STOMP clients; Docker required). Dashboard unit tests: `cd pulse-dashboard && npm test`.
 
 ### Kubernetes
 
