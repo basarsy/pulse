@@ -31,3 +31,6 @@ Thumbs.db
 # Frontend
 node_modules/
 dist/
+
+# Kubernetes secrets (generated from k8s/config/secrets.env.example)
+k8s/config/secrets.env

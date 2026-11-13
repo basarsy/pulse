@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulse-app
+  labels:
+    app: pulse
+    component: pulse-app
+spec:
+  # Single replica on purpose until the app is safe to scale out:
+  #  - the STOMP broker is in-memory, so WebSocket pushes only reach clients on the same pod
+  #  - @Scheduled jobs (stale-command timeout, simulator) would run on every replica
+  # Scale out after moving to a broker relay and adding ShedLock (see README "Roadmap").
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pulse
+      component: pulse-app
+  template:
+    metadata:
+      labels:
+        app: pulse
+        component: pulse-app
+    spec:
+      containers:
+        - name: pulse-app
+          image: pulse-app:0.0.1-SNAPSHOT
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: app-configmap
+            - secretRef:
+                name: app-secrets
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"

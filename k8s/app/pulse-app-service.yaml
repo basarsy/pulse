@@ -1,15 +1,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: gateway
+  name: pulse-app
   labels:
     app: pulse
-    component: gateway
+    component: pulse-app
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
     - port: 8080
       targetPort: 8080
   selector:
     app: pulse
-    component: gateway
+    component: pulse-app
