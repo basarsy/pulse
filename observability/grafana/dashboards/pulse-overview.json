@@ -1,0 +1,156 @@
+{
+  "uid": "pulse-overview",
+  "title": "Pulse Overview",
+  "description": "Commands, OTA rollouts, messaging reliability and API health for the Pulse app.",
+  "tags": ["pulse"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row", "title": "Messaging reliability", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 100
+    },
+    {
+      "id": 1, "type": "stat", "title": "Outbox backlog",
+      "description": "Commands / OTA instructions recorded but not yet delivered to Kafka. Should return to 0 within seconds.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "sum(pulse_outbox_incomplete)" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 50 } ] }
+        }, "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Dead-lettered (1h)",
+      "description": "Messages that could not be processed and were parked on <topic>.DLT.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "sum(increase(pulse_kafka_dead_lettered_total[1h])) or vector(0)" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        }, "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Kafka circuit breaker",
+      "description": "State of the circuit breaker on Kafka sends.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "max(resilience4j_circuitbreaker_state{name=\"kafkaCircuitBreaker\", state=\"open\"}) or vector(0)" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "CLOSED", "color": "green" }, "1": { "text": "OPEN", "color": "red" } } }],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        }, "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Dead-lettered by topic",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "sum by (topic) (increase(pulse_kafka_dead_lettered_total[5m]))", "legendFormat": "{{topic}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "type": "row", "title": "Remote commands", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }, "id": 101
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Commands issued per minute by type",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "sum by (type) (rate(pulse_commands_issued_total{type!=\"UNKNOWN\"}[5m])) * 60", "legendFormat": "{{type}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Command outcomes per minute",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 12, "y": 7 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(pulse_commands_completed_total[5m])) * 60", "legendFormat": "completed" },
+        { "refId": "B", "expr": "sum(rate(pulse_commands_failed_total[5m])) * 60", "legendFormat": "failed" },
+        { "refId": "C", "expr": "sum(rate(pulse_commands_timed_out_total[5m])) * 60", "legendFormat": "timed out" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 7, "type": "stat", "title": "Command success (1h)",
+      "description": "Completed / (completed + failed + timed out) over the last hour.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "sum(increase(pulse_commands_completed_total[1h])) / clamp_min(sum(increase(pulse_commands_completed_total[1h])) + sum(increase(pulse_commands_failed_total[1h])) + sum(increase(pulse_commands_timed_out_total[1h])), 1)" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "decimals": 1, "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.9 }, { "color": "green", "value": 0.97 } ] }
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "row", "title": "OTA rollouts & telemetry", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 }, "id": 102
+    },
+    {
+      "id": 8, "type": "stat", "title": "Active rollouts",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 4, "x": 0, "y": 16 },
+      "targets": [{ "refId": "A", "expr": "sum(pulse_rollout_campaigns_active)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Vehicle updates finished (per 5m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 10, "x": 4, "y": 16 },
+      "targets": [{ "refId": "A", "expr": "sum by (result) (increase(pulse_ota_updates_finished_total[5m]))", "legendFormat": "{{result}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Telemetry snapshots ingested per minute",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 10, "x": 14, "y": 16 },
+      "targets": [{ "refId": "A", "expr": "sum(rate(pulse_telemetry_ingested_total[5m])) * 60", "legendFormat": "snapshots" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "type": "row", "title": "API & JVM", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "id": 103
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "HTTP requests per second by status",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "targets": [{ "refId": "A", "expr": "sum by (status) (rate(http_server_requests_seconds_count{uri!~\"/actuator.*\"}[5m]))", "legendFormat": "{{status}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Average API latency by endpoint",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "targets": [{ "refId": "A", "expr": "sum by (uri) (rate(http_server_requests_seconds_sum{uri!~\"/actuator.*\"}[5m])) / sum by (uri) (rate(http_server_requests_seconds_count{uri!~\"/actuator.*\"}[5m]))", "legendFormat": "{{uri}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "JVM heap used",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "targets": [{ "refId": "A", "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "heap used" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    }
+  ]
+}

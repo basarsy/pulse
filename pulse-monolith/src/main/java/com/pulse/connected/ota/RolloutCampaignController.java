@@ -65,6 +65,12 @@ public class RolloutCampaignController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping
+    @PreAuthorize("hasAnyRole('FLEET_ADMIN', 'SYSTEM_ADMIN')")
+    public ResponseEntity<List<CampaignResponse>> listCampaigns() {
+        return ResponseEntity.ok(campaignService.listCampaigns());
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('FLEET_ADMIN', 'SYSTEM_ADMIN')")
     public ResponseEntity<CampaignResponse> getCampaignDetails(@PathVariable UUID id) {

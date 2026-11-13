@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import Button from '../components/Button';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({ email: '', password: '', fullName: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -14,10 +15,11 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
-      await api.post('/auth/register', formData);
-      navigate('/login');
-    } catch (err: any) {
-      setError(err.message || 'Registration failed');
+      // Registration returns a token pair, so the new user is signed in straight away.
+      await register(formData.fullName, formData.email, formData.password);
+      navigate('/');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setLoading(false);
     }

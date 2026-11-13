@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>The vehicle simulator runs with fast timings and no injected failures, so flows through
  * Kafka complete deterministically within a few seconds.
  */
-@SpringBootTest(properties = {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "pulse.security.jwt.secret=integration-test-secret-key-at-least-32-bytes",
         "pulse.simulator.enabled=true",
         "pulse.simulator.heartbeat-interval-ms=500",

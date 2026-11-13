@@ -6,7 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaTemplate;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.kafka.listener.CommonErrorHandler;
+import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
@@ -27,11 +29,17 @@ public class KafkaErrorHandlingConfig {
     @Bean
     public CommonErrorHandler kafkaErrorHandler(
             KafkaTemplate<String, String> kafkaTemplate,
+            MeterRegistry meterRegistry,
             @Value("${pulse.kafka.retry.initial-interval-ms:500}") long initialIntervalMs,
             @Value("${pulse.kafka.retry.max-elapsed-ms:10000}") long maxElapsedMs) {
 
-        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate,
+        DeadLetterPublishingRecoverer deadLetterPublisher = new DeadLetterPublishingRecoverer(kafkaTemplate,
                 (record, exception) -> new TopicPartition(KafkaTopics.deadLetter(record.topic()), record.partition()));
+
+        ConsumerRecordRecoverer recoverer = (record, exception) -> {
+            deadLetterPublisher.accept(record, exception);
+            meterRegistry.counter("pulse.kafka.dead_lettered", "topic", record.topic()).increment();
+        };
 
         ExponentialBackOff backOff = new ExponentialBackOff(initialIntervalMs, 2.0);
         backOff.setMaxElapsedTime(maxElapsedMs);

@@ -8,6 +8,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.kafka.test.EmbeddedKafkaBroker;
@@ -34,6 +35,9 @@ class KafkaErrorHandlingTest extends AbstractIntegrationTest {
     @Autowired
     private EmbeddedKafkaBroker broker;
 
+    @Autowired
+    private MeterRegistry meterRegistry;
+
     @Test
     void malformedCommandResultIsDeadLettered() throws Exception {
         assertDeadLettered(KafkaTopics.VEHICLE_COMMAND_RESULTS);
@@ -47,6 +51,7 @@ class KafkaErrorHandlingTest extends AbstractIntegrationTest {
     private void assertDeadLettered(String topic) throws Exception {
         String key = UUID.randomUUID().toString();
         String poison = "{this is not json " + key;
+        double deadLetteredBefore = deadLettered(topic);
         kafkaTemplate.send(topic, key, poison).get();
 
         Map<String, Object> props = KafkaTestUtils.consumerProps("dlt-test-" + key, "false", broker);
@@ -65,5 +70,12 @@ class KafkaErrorHandlingTest extends AbstractIntegrationTest {
                 });
             });
         }
+        // Dead-lettering is visible in metrics (alerting / Grafana).
+        assertThat(deadLettered(topic)).isEqualTo(deadLetteredBefore + 1);
+    }
+
+    private double deadLettered(String topic) {
+        var counter = meterRegistry.find("pulse.kafka.dead_lettered").tag("topic", topic).counter();
+        return counter == null ? 0 : counter.count();
     }
 }

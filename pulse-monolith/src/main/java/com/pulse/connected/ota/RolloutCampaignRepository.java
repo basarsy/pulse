@@ -12,4 +12,8 @@ import java.util.UUID;
 public interface RolloutCampaignRepository extends JpaRepository<RolloutCampaign, UUID> {
     List<RolloutCampaign> findAllByTargetModel(String targetModel);
     List<RolloutCampaign> findAllByStatus(CampaignStatus status);
+
+    List<RolloutCampaign> findAllByOrderByCreatedAtDesc();
+
+    long countByStatus(CampaignStatus status);
 }

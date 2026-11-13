@@ -49,12 +49,25 @@ class ApplicationSmokeTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void requestsWithoutTokenAreUnauthorized() throws Exception {
+        mvc.perform(get("/api/v1/vehicles")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void ownersCannotListRolloutCampaigns() throws Exception {
+        mvc.perform(get("/api/v1/rollouts")
+                        .header("Authorization", "Bearer " + registerAndGetToken("owner")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void refreshTokenIsNotAcceptedAsBearerToken() throws Exception {
         JsonNode auth = register(uniqueEmail("refresh"));
 
+        // Not a valid access token: unauthenticated (401), which tells clients to refresh.
         mvc.perform(get("/api/v1/users/me")
                         .header("Authorization", "Bearer " + auth.get("refreshToken").asText()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         mvc.perform(get("/api/v1/users/me")
                         .header("Authorization", "Bearer " + auth.get("accessToken").asText()))
