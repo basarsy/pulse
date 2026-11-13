@@ -1,7 +1,6 @@
 package com.pulse.connected.auth;
 
 import com.pulse.connected.auth.dto.UserResponse;
-import com.pulse.connected.security.UserPrincipal;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;

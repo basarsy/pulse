@@ -1,0 +1,27 @@
+# Rendered by the nginx image entrypoint (envsubst) into /etc/nginx/conf.d/default.conf.
+# API_UPSTREAM: http://app:8080 in Docker Compose, http://pulse-app:8080 in Kubernetes.
+server {
+    listen 80;
+    server_name localhost;
+
+    location /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws-pulse {
+        proxy_pass ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+}

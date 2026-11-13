@@ -5,14 +5,8 @@ metadata:
   labels:
     app: pulse
 data:
-  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/pulse"
-  SPRING_DATA_REDIS_HOST: "redis"
   POSTGRES_DB: "pulse"
-  VEHICLE_REGISTRY_URL: "http://vehicle-registry:8081"
-  COMMAND_SERVICE_URL: "http://command-service:8082"
-  OTA_SERVICE_URL: "http://ota-service:8083"
-  init.sql: |
-    CREATE SCHEMA IF NOT EXISTS vehicle_registry;
-    CREATE SCHEMA IF NOT EXISTS command_service;
-    CREATE SCHEMA IF NOT EXISTS ota_service;
+  DB_URL: "jdbc:postgresql://postgres:5432/pulse"
+  REDIS_HOST: "redis"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SIMULATOR_ENABLED: "false"

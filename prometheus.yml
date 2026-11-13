@@ -3,9 +3,11 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'pulse-backend'
+  - job_name: 'pulse-app'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      # 'app' when the whole stack runs in Docker Compose,
+      # 'host.docker.internal' when the app runs on the host (IDE / spring-boot:run).
+      - targets: ['app:8080', 'host.docker.internal:8080']
         labels:
-          application: 'pulse-backend'
+          application: 'pulse-app'

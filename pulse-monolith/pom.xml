@@ -15,10 +15,15 @@
     <description>Pulse — Connected Vehicle &amp; Fleet OTA Platform (Monolith)</description>
 
     <dependencies>
-        <!-- Pulse Common (shared DTOs, exceptions, audit, metrics) -->
+        <!-- Spring Modulith -->
         <dependency>
-            <groupId>com.pulse</groupId>
-            <artifactId>pulse-common</artifactId>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-starter-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Spring Boot Starters -->

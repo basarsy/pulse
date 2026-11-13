@@ -4,19 +4,26 @@ metadata:
   name: pulse-ingress
   labels:
     app: pulse
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   ingressClassName: nginx
   rules:
     - host: pulse.local
       http:
         paths:
+          # Paths are forwarded unchanged; the app serves /api/v1/** and /ws-pulse/**.
+          # /actuator is intentionally not exposed publicly.
           - path: /api
             pathType: Prefix
             backend:
               service:
-                name: gateway
+                name: pulse-app
+                port:
+                  number: 8080
+          - path: /ws-pulse
+            pathType: Prefix
+            backend:
+              service:
+                name: pulse-app
                 port:
                   number: 8080
           - path: /

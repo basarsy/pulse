@@ -46,9 +46,12 @@ server:
   port: 8080
 
 pulse:
+  simulator:
+    enabled: ${SIMULATOR_ENABLED:false}
   security:
     jwt:
-      secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      # Required. HS256 needs at least 32 bytes. Dev value lives in application-local.yml.
+      secret: ${JWT_SECRET}
       expiration-ms: 3600000 # 1 hour
       refresh-expiration-ms: 86400000 # 24 hours
 
@@ -60,7 +63,7 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
     prometheus:
       enabled: true
   prometheus:
@@ -91,6 +94,6 @@ resilience4j:
 logging:
   level:
     root: INFO
-    com.pulse.connected: DEBUG
+    com.pulse.connected: INFO
     org.springframework.security: INFO
     io.github.resilience4j: INFO

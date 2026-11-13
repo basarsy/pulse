@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import Button from '../components/Button';
 
 export default function RegisterPage() {
-  const [formData, setFormData] = useState({ email: '', password: '', fullName: '', role: 'USER' });
+  const [formData, setFormData] = useState({ email: '', password: '', fullName: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -45,13 +45,6 @@ export default function RegisterPage() {
           <div className="form-group">
             <label className="form-label">Password</label>
             <input type="password" required className="form-input" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Role</label>
-            <select className="form-input" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
-              <option value="USER">User</option>
-              <option value="FLEET_ADMIN">Fleet Admin</option>
-            </select>
           </div>
           <Button type="submit" style={{ width: '100%' }} isLoading={loading}>Register</Button>
         </form>

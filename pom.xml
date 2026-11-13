@@ -19,37 +19,27 @@
     <description>Pulse — Connected Vehicle &amp; Fleet OTA Platform (Parent POM)</description>
 
     <modules>
-        <module>pulse-common</module>
         <module>pulse-monolith</module>
-        <module>pulse-vehicle-registry</module>
-        <module>pulse-command-service</module>
-        <module>pulse-ota-service</module>
-        <module>pulse-gateway</module>
     </modules>
 
     <properties>
         <java.version>21</java.version>
         <jjwt.version>0.12.6</jjwt.version>
         <resilience4j.version>2.2.0</resilience4j.version>
-        <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <spring-modulith.version>1.2.5</spring-modulith.version>
+        <!-- Overrides Boot's managed 1.19.x, whose Docker API (1.32) is rejected by Docker Engine 29+ -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- Spring Cloud BOM (for Gateway) -->
+            <!-- Spring Modulith (module boundary verification) -->
             <dependency>
-                <groupId>org.springframework.cloud</groupId>
-                <artifactId>spring-cloud-dependencies</artifactId>
-                <version>${spring-cloud.version}</version>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-bom</artifactId>
+                <version>${spring-modulith.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-
-            <!-- Pulse Common Module -->
-            <dependency>
-                <groupId>com.pulse</groupId>
-                <artifactId>pulse-common</artifactId>
-                <version>${project.version}</version>
             </dependency>
 
             <!-- JWT -->

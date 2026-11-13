@@ -3,7 +3,6 @@ package com.pulse.connected.auth;
 import com.pulse.connected.auth.dto.*;
 import com.pulse.connected.common.exception.DuplicateResourceException;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
-import com.pulse.connected.security.JwtService;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,17 +35,12 @@ public class AuthService {
             throw new DuplicateResourceException("Email '" + request.getEmail() + "' is already registered");
         }
 
-        Set<Role> roles = request.getRoles();
-        if (roles == null || roles.isEmpty()) {
-            roles = new HashSet<>();
-            roles.add(Role.OWNER);
-        }
-
+        // Self-registration always yields an OWNER; privileged roles are never caller-controlled.
         User user = User.builder()
                 .email(request.getEmail().toLowerCase())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .roles(roles)
+                .roles(new HashSet<>(Set.of(Role.OWNER)))
                 .build();
 
         User savedUser = userRepository.save(user);
@@ -87,12 +81,10 @@ public class AuthService {
 
     public AuthResponse refreshToken(RefreshTokenRequest request) {
         String refreshToken = request.getRefreshToken();
-        if (!jwtService.validateToken(refreshToken)) {
-            throw new BadCredentialsException("Invalid or expired refresh token");
-        }
+        UUID userId = jwtService.parseRefreshToken(refreshToken)
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
 
-        String userIdStr = jwtService.getUserIdFromToken(refreshToken);
-        User user = userRepository.findById(UUID.fromString(userIdStr))
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         String newAccessToken = jwtService.generateAccessToken(user);

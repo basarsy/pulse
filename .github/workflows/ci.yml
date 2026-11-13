@@ -1,4 +1,4 @@
-name: Pulse CI/CD Pipeline
+name: CI
 
 on:
   push:
@@ -7,50 +7,61 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-and-test:
-    name: Build & Test Multi-Module
+  backend:
+    name: Backend (build, test, image)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21 & Maven
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build Multi-Module Project
-        run: mvn clean compile -B
+      # Unit tests, Spring Modulith boundary checks and the Testcontainers smoke test
+      - name: Build and test
+        run: mvn -B -ntp verify
 
-      - name: Run Unit & Integration Tests
-        run: mvn test -B
-
-      - name: Package Microservices & Monolith
-        run: mvn package -DskipTests -B
-
-      - name: Upload Monolith Artifact
+      - name: Upload application JAR
         uses: actions/upload-artifact@v4
         with:
-          name: pulse-monolith-jar
-          path: pulse-monolith/target/*.jar
+          name: pulse-app-jar
+          path: pulse-monolith/target/pulse-monolith-*.jar
           retention-days: 7
 
-      - name: Upload Vehicle Registry Artifact
+      - name: Upload module documentation
         uses: actions/upload-artifact@v4
         with:
-          name: pulse-vehicle-registry-jar
-          path: pulse-vehicle-registry/target/*.jar
+          name: spring-modulith-docs
+          path: pulse-monolith/target/spring-modulith-docs
           retention-days: 7
 
-  dashboard-build:
-    name: Build React Dashboard
+      - name: Build Docker image
+        run: docker build -f pulse-monolith/Dockerfile -t pulse-app:${{ github.sha }} .
+
+  k8s-manifests:
+    name: Kubernetes manifests render
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render kustomization
+        run: |
+          cp k8s/config/secrets.env.example k8s/config/secrets.env
+          kubectl kustomize k8s > /dev/null
+
+  dashboard:
+    name: Dashboard (build)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Node.js
@@ -60,8 +71,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: pulse-dashboard/package-lock.json
 
-      - name: Install Dashboard Dependencies
-        run: cd pulse-dashboard && npm ci
+      - name: Install dependencies
+        run: npm ci
+        working-directory: pulse-dashboard
 
-      - name: Build Dashboard
-        run: cd pulse-dashboard && npm run build
+      - name: Build
+        run: npm run build
+        working-directory: pulse-dashboard

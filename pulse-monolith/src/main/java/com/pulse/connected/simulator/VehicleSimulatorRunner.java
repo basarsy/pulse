@@ -2,7 +2,6 @@ package com.pulse.connected.simulator;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
-import com.pulse.connected.messaging.KafkaTopics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.messaging.KafkaTopicConfig;
@@ -29,7 +28,7 @@ import java.util.List;
 import java.util.Random;
 
 @Component
-@ConditionalOnProperty(name = "pulse.simulator.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "pulse.simulator.enabled", havingValue = "true", matchIfMissing = false)
 public class VehicleSimulatorRunner {
 
     private static final Logger log = LoggerFactory.getLogger(VehicleSimulatorRunner.class);

@@ -14,7 +14,4 @@ data:
         metrics_path: '/actuator/prometheus'
         static_configs:
           - targets:
-            - 'vehicle-registry:8081'
-            - 'command-service:8082'
-            - 'ota-service:8083'
-            - 'gateway:8080'
+            - 'pulse-app:8080'

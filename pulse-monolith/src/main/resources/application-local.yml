@@ -1,0 +1,12 @@
+# Local development profile: ./mvnw -pl pulse-monolith spring-boot:run -Dspring-boot.run.profiles=local
+# Never use these values outside a developer machine.
+pulse:
+  simulator:
+    enabled: true
+  security:
+    jwt:
+      secret: local-dev-only-jwt-secret-change-me-0123456789abcdef
+
+logging:
+  level:
+    com.pulse.connected: DEBUG
