@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -160,7 +161,7 @@ class RolloutCampaignServiceTest {
         when(vehicleUpdateStatusRepository.findByVehicleIdAndCampaignId(any(), any())).thenReturn(Optional.of(updateStatus));
         when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
 
-        CampaignResponse response = campaignService.startCampaign(campaign.getId());
+        CampaignResponse response = campaignService.startCampaign(campaign.getId(), admin);
 
         assertThat(response).isNotNull();
         assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.IN_PROGRESS);
@@ -197,5 +198,32 @@ class RolloutCampaignServiceTest {
         assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.PAUSED);
         verify(campaignRepository).save(campaign);
         verify(otaWebSocketService).notifyCampaignProgress(eq(campaign.getId()), any());
+    }
+
+    @Test
+    void pauseCampaign_AuditsActingUserRatherThanCreator() {
+        User otherAdmin = User.builder()
+                .id(UUID.randomUUID())
+                .email("other-admin@example.com")
+                .fullName("Other Admin")
+                .roles(Set.of(Role.SYSTEM_ADMIN))
+                .build();
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(campaign)).thenReturn(campaign);
+
+        campaignService.pauseCampaign(campaign.getId(), otherAdmin);
+
+        verify(auditLogService).log(eq(otherAdmin.getId()), eq("CAMPAIGN_PAUSED"), any(), any(), any());
+    }
+
+    @Test
+    void abortCampaign_AlreadyCompleted_IsRejected() {
+        campaign.setStatus(CampaignStatus.COMPLETED);
+        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+
+        assertThatThrownBy(() -> campaignService.abortCampaign(campaign.getId(), admin))
+                .isInstanceOf(IllegalStateException.class);
+        verify(campaignRepository, never()).save(any());
     }
 }

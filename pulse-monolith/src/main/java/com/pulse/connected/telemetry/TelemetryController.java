@@ -28,6 +28,7 @@ public class TelemetryController {
     }
 
     @PostMapping
+    @PreAuthorize("@vehicleSecurityService.hasAccess(#id, principal)")
     public ResponseEntity<Void> ingestTelemetry(@PathVariable("id") UUID id, @RequestBody IngestTelemetryRequest request) {
         VehicleTelemetryEvent event = VehicleTelemetryEvent.builder()
                 .vehicleId(id)

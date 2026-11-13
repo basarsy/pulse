@@ -99,7 +99,7 @@ public class RolloutCampaignService {
     }
 
     @Transactional
-    public CampaignResponse startCampaign(UUID campaignId) {
+    public CampaignResponse startCampaign(UUID campaignId, User actor) {
         RolloutCampaign campaign = campaignRepository.findById(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
@@ -110,7 +110,7 @@ public class RolloutCampaignService {
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         RolloutCampaign saved = campaignRepository.save(campaign);
         
-        UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+        UUID actorId = actor.getId();
         auditLogService.log(actorId, "CAMPAIGN_STARTED", "RolloutCampaign", campaignId.toString(), null);
 
         executeActiveStage(saved);
@@ -118,7 +118,7 @@ public class RolloutCampaignService {
     }
 
     @Transactional
-    public CampaignResponse pauseCampaign(UUID campaignId) {
+    public CampaignResponse pauseCampaign(UUID campaignId, User actor) {
         RolloutCampaign campaign = campaignRepository.findById(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
@@ -129,7 +129,7 @@ public class RolloutCampaignService {
         campaign.setStatus(CampaignStatus.PAUSED);
         RolloutCampaign saved = campaignRepository.save(campaign);
         
-        UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+        UUID actorId = actor.getId();
         auditLogService.log(actorId, "CAMPAIGN_PAUSED", "RolloutCampaign", campaignId.toString(), null);
 
         CampaignResponse response = mapToCampaignResponse(saved);
@@ -138,19 +138,23 @@ public class RolloutCampaignService {
     }
 
     @Transactional
-    public CampaignResponse resumeCampaign(UUID campaignId) {
-        return startCampaign(campaignId);
+    public CampaignResponse resumeCampaign(UUID campaignId, User actor) {
+        return startCampaign(campaignId, actor);
     }
 
     @Transactional
-    public CampaignResponse abortCampaign(UUID campaignId) {
+    public CampaignResponse abortCampaign(UUID campaignId, User actor) {
         RolloutCampaign campaign = campaignRepository.findById(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
+
+        if (campaign.getStatus() == CampaignStatus.COMPLETED || campaign.getStatus() == CampaignStatus.ABORTED) {
+            throw new IllegalStateException("Cannot abort campaign in status: " + campaign.getStatus());
+        }
 
         campaign.setStatus(CampaignStatus.ABORTED);
         RolloutCampaign saved = campaignRepository.save(campaign);
         
-        UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
+        UUID actorId = actor.getId();
         auditLogService.log(actorId, "CAMPAIGN_ABORTED", "RolloutCampaign", campaignId.toString(), null);
 
         CampaignResponse response = mapToCampaignResponse(saved);

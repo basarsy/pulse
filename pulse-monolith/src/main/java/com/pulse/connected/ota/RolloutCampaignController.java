@@ -35,29 +35,33 @@ public class RolloutCampaignController {
 
     @PostMapping("/{id}/start")
     @PreAuthorize("hasAnyRole('FLEET_ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<CampaignResponse> startCampaign(@PathVariable UUID id) {
-        CampaignResponse response = campaignService.startCampaign(id);
+    public ResponseEntity<CampaignResponse> startCampaign(@PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        CampaignResponse response = campaignService.startCampaign(id, principal.getUser());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/pause")
     @PreAuthorize("hasAnyRole('FLEET_ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<CampaignResponse> pauseCampaign(@PathVariable UUID id) {
-        CampaignResponse response = campaignService.pauseCampaign(id);
+    public ResponseEntity<CampaignResponse> pauseCampaign(@PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        CampaignResponse response = campaignService.pauseCampaign(id, principal.getUser());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/resume")
     @PreAuthorize("hasAnyRole('FLEET_ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<CampaignResponse> resumeCampaign(@PathVariable UUID id) {
-        CampaignResponse response = campaignService.resumeCampaign(id);
+    public ResponseEntity<CampaignResponse> resumeCampaign(@PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        CampaignResponse response = campaignService.resumeCampaign(id, principal.getUser());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/abort")
     @PreAuthorize("hasAnyRole('FLEET_ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<CampaignResponse> abortCampaign(@PathVariable UUID id) {
-        CampaignResponse response = campaignService.abortCampaign(id);
+    public ResponseEntity<CampaignResponse> abortCampaign(@PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        CampaignResponse response = campaignService.abortCampaign(id, principal.getUser());
         return ResponseEntity.ok(response);
     }
 
