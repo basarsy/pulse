@@ -27,3 +27,7 @@ Thumbs.db
 # Environment & local overrides
 .env
 *.local
+
+# Frontend
+node_modules/
+dist/
