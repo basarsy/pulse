@@ -1,9 +1,8 @@
-package com.pulse.connected.security;
+package com.pulse.connected.vehicle;
 
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
-import com.pulse.connected.vehicle.Vehicle;
-import com.pulse.connected.vehicle.VehicleRepository;
+import com.pulse.connected.auth.UserPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

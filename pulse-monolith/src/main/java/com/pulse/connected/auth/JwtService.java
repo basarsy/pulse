@@ -1,7 +1,5 @@
-package com.pulse.connected.security;
+package com.pulse.connected.auth;
 
-import com.pulse.connected.auth.Role;
-import com.pulse.connected.auth.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;

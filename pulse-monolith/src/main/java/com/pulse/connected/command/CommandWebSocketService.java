@@ -1,4 +1,4 @@
-package com.pulse.connected.websocket;
+package com.pulse.connected.command;
 
 import com.pulse.connected.command.dto.CommandResponse;
 import org.slf4j.Logger;

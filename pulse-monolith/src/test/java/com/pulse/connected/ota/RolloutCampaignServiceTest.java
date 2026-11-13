@@ -2,7 +2,6 @@ package com.pulse.connected.ota;
 
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
-import com.pulse.connected.messaging.OtaKafkaProducer;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.domain.CampaignStatus;
@@ -11,7 +10,6 @@ import com.pulse.connected.domain.RolloutStageStatus;
 import com.pulse.connected.domain.UpdateStatus;
 import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
-import com.pulse.connected.websocket.OtaWebSocketService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -3,7 +3,6 @@ package com.pulse.connected.auth;
 import com.pulse.connected.auth.dto.*;
 import com.pulse.connected.common.exception.DuplicateResourceException;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
-import com.pulse.connected.security.JwtService;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

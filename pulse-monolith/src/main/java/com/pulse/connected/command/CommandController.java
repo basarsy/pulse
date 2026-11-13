@@ -2,7 +2,7 @@ package com.pulse.connected.command;
 
 import com.pulse.connected.command.dto.CommandResponse;
 import com.pulse.connected.command.dto.IssueCommandRequest;
-import com.pulse.connected.security.UserPrincipal;
+import com.pulse.connected.auth.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

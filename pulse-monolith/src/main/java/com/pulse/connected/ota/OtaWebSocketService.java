@@ -1,4 +1,4 @@
-package com.pulse.connected.websocket;
+package com.pulse.connected.ota;
 
 import com.pulse.connected.ota.dto.CampaignResponse;
 import com.pulse.connected.ota.dto.VehicleUpdateStatusResponse;

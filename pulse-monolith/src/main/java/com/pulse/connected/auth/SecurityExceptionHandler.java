@@ -1,4 +1,4 @@
-package com.pulse.connected.security;
+package com.pulse.connected.auth;
 
 import com.pulse.connected.common.dto.ErrorResponse;
 import org.springframework.core.annotation.Order;

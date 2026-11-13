@@ -2,7 +2,6 @@ package com.pulse.connected.auth;
 
 import com.pulse.connected.auth.dto.*;
 import com.pulse.connected.common.exception.DuplicateResourceException;
-import com.pulse.connected.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

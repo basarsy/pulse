@@ -1,6 +1,5 @@
-package com.pulse.connected.security;
+package com.pulse.connected.auth;
 
-import com.pulse.connected.auth.User;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

@@ -2,7 +2,6 @@ package com.pulse.connected.simulator;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
-import com.pulse.connected.messaging.KafkaTopics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.messaging.KafkaTopicConfig;

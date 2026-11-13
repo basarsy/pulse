@@ -1,4 +1,4 @@
-package com.pulse.connected.security;
+package com.pulse.connected.auth;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -1,6 +1,6 @@
 package com.pulse.connected.vehicle;
 
-import com.pulse.connected.security.UserPrincipal;
+import com.pulse.connected.auth.UserPrincipal;
 import com.pulse.connected.vehicle.dto.AuthorizeUserRequest;
 import com.pulse.connected.vehicle.dto.CreateVehicleRequest;
 import com.pulse.connected.vehicle.dto.VehicleResponse;

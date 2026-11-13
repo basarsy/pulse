@@ -1,11 +1,9 @@
-package com.pulse.connected.messaging;
+package com.pulse.connected.command;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
-import com.pulse.connected.messaging.KafkaTopics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.domain.CommandStatus;
-import com.pulse.connected.command.CommandService;
 import com.pulse.connected.messaging.dto.CommandResultEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,4 +1,4 @@
 /**
- * Authentication and authorization module (User registration, login, JWT issuance, roles).
+ * Identity and access: users, roles, JWT issuance/validation and the HTTP security configuration.
  */
 package com.pulse.connected.auth;

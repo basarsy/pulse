@@ -1,8 +1,7 @@
-package com.pulse.connected.messaging;
+package com.pulse.connected.command;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
-import com.pulse.connected.messaging.KafkaTopics;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.messaging.dto.VehicleCommandEvent;

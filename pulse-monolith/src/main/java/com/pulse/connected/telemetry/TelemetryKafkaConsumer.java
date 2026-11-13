@@ -1,11 +1,9 @@
-package com.pulse.connected.messaging;
+package com.pulse.connected.telemetry;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
-import com.pulse.connected.messaging.KafkaTopics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.messaging.dto.VehicleTelemetryEvent;
-import com.pulse.connected.telemetry.TelemetryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;

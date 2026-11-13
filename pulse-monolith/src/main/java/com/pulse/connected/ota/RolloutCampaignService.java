@@ -6,13 +6,11 @@ import com.pulse.connected.domain.RolloutStageStatus;
 
 import com.pulse.connected.auth.User;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
-import com.pulse.connected.messaging.OtaKafkaProducer;
 import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
-import com.pulse.connected.websocket.OtaWebSocketService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

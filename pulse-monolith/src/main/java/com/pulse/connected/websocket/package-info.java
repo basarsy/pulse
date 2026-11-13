@@ -1,4 +1,4 @@
 /**
- * WebSocket & STOMP configurations for real-time notification push to clients.
+ * WebSocket / STOMP broker configuration. Modules push their own notifications.
  */
 package com.pulse.connected.websocket;

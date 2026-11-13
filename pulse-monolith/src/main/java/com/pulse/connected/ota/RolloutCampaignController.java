@@ -3,7 +3,7 @@ package com.pulse.connected.ota;
 import com.pulse.connected.ota.dto.CampaignResponse;
 import com.pulse.connected.ota.dto.CreateCampaignRequest;
 import com.pulse.connected.ota.dto.VehicleUpdateStatusResponse;
-import com.pulse.connected.security.UserPrincipal;
+import com.pulse.connected.auth.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

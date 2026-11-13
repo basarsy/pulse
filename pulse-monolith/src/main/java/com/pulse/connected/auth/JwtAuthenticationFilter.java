@@ -1,6 +1,5 @@
-package com.pulse.connected.security;
+package com.pulse.connected.auth;
 
-import com.pulse.connected.auth.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
