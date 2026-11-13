@@ -15,12 +15,6 @@
     <description>Pulse — Connected Vehicle &amp; Fleet OTA Platform (Monolith)</description>
 
     <dependencies>
-        <!-- Pulse Common (shared DTOs, exceptions, audit, metrics) -->
-        <dependency>
-            <groupId>com.pulse</groupId>
-            <artifactId>pulse-common</artifactId>
-        </dependency>
-
         <!-- Spring Boot Starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

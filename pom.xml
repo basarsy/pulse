@@ -19,7 +19,6 @@
     <description>Pulse — Connected Vehicle &amp; Fleet OTA Platform (Parent POM)</description>
 
     <modules>
-        <module>pulse-common</module>
         <module>pulse-monolith</module>
     </modules>
 
@@ -31,13 +30,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Pulse Common Module -->
-            <dependency>
-                <groupId>com.pulse</groupId>
-                <artifactId>pulse-common</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- JWT -->
             <dependency>
                 <groupId>io.jsonwebtoken</groupId>
