@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Random;
 
 @Component
-@ConditionalOnProperty(name = "pulse.simulator.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "pulse.simulator.enabled", havingValue = "true", matchIfMissing = false)
 public class VehicleSimulatorRunner {
 
     private static final Logger log = LoggerFactory.getLogger(VehicleSimulatorRunner.class);
