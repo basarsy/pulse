@@ -12,11 +12,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class JwtService {
+
+    private static final String TYPE_CLAIM = "type";
+    private static final String ACCESS = "ACCESS";
+    private static final String REFRESH = "REFRESH";
 
     private final SecretKey key;
     private final long expirationMs;
@@ -36,6 +41,7 @@ public class JwtService {
         claims.put("email", user.getEmail());
         claims.put("fullName", user.getFullName());
         claims.put("roles", user.getRoles().stream().map(Role::name).collect(Collectors.toList()));
+        claims.put(TYPE_CLAIM, ACCESS);
 
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
@@ -55,36 +61,45 @@ public class JwtService {
 
         return Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("type", "REFRESH")
+                .claim(TYPE_CLAIM, REFRESH)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(key)
                 .compact();
     }
 
-    public String getUserIdFromToken(String token) {
-        Claims claims = extractAllClaims(token);
-        return claims.getSubject();
+    /**
+     * Returns the user id of a valid, unexpired <em>access</em> token. Empty for refresh tokens,
+     * tokens signed with another key, and expired or malformed tokens.
+     */
+    public Optional<UUID> parseAccessToken(String token) {
+        return parse(token, ACCESS);
     }
 
-    public boolean validateToken(String token) {
-        try {
-            Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
-            return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
+    /**
+     * Returns the user id of a valid, unexpired <em>refresh</em> token. Empty otherwise.
+     */
+    public Optional<UUID> parseRefreshToken(String token) {
+        return parse(token, REFRESH);
     }
 
     public long getExpirationMs() {
         return expirationMs;
     }
 
-    private Claims extractAllClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+    private Optional<UUID> parse(String token, String expectedType) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(key)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            if (!expectedType.equals(claims.get(TYPE_CLAIM, String.class))) {
+                return Optional.empty();
+            }
+            return Optional.of(UUID.fromString(claims.getSubject()));
+        } catch (JwtException | IllegalArgumentException e) {
+            return Optional.empty();
+        }
     }
 }

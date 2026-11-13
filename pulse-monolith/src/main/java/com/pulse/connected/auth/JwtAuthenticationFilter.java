@@ -12,7 +12,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.UUID;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -33,18 +32,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String token = parseBearerToken(request);
 
-        if (token != null && jwtService.validateToken(token)) {
-            String userIdStr = jwtService.getUserIdFromToken(token);
-            if (userIdStr != null) {
-                UUID userId = UUID.fromString(userIdStr);
-                userRepository.findById(userId).ifPresent(user -> {
-                    UserPrincipal principal = new UserPrincipal(user);
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
-                });
-            }
+        if (token != null) {
+            jwtService.parseAccessToken(token)
+                    .flatMap(userRepository::findById)
+                    .ifPresent(user -> {
+                        UserPrincipal principal = new UserPrincipal(user);
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    });
         }
 
         filterChain.doFilter(request, response);

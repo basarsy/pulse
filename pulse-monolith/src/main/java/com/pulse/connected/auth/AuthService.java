@@ -86,12 +86,10 @@ public class AuthService {
 
     public AuthResponse refreshToken(RefreshTokenRequest request) {
         String refreshToken = request.getRefreshToken();
-        if (!jwtService.validateToken(refreshToken)) {
-            throw new BadCredentialsException("Invalid or expired refresh token");
-        }
+        UUID userId = jwtService.parseRefreshToken(refreshToken)
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
 
-        String userIdStr = jwtService.getUserIdFromToken(refreshToken);
-        User user = userRepository.findById(UUID.fromString(userIdStr))
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         String newAccessToken = jwtService.generateAccessToken(user);
