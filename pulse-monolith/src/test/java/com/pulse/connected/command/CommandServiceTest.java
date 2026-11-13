@@ -7,6 +7,9 @@ import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
 import com.pulse.connected.command.dto.CommandResponse;
 import com.pulse.connected.command.dto.IssueCommandRequest;
+import com.pulse.connected.common.exception.DuplicateResourceException;
+import com.pulse.connected.common.exception.RateLimitExceededException;
+import com.pulse.connected.common.exception.ResourceNotFoundException;
 import com.pulse.connected.domain.ConnectivityState;
 import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
@@ -102,7 +105,7 @@ class CommandServiceTest {
                 .build();
 
         when(idempotencyService.checkRateLimit(owner.getId())).thenReturn(true);
-        when(idempotencyService.getExistingCommandId("idem-key-1")).thenReturn(Optional.empty());
+        when(idempotencyService.getExistingCommandId(owner.getId(), "idem-key-1")).thenReturn(Optional.empty());
         when(vehicleRepository.findById(onlineVehicle.getId())).thenReturn(Optional.of(onlineVehicle));
         when(commandRepository.save(any(RemoteCommand.class))).thenReturn(pendingCommand);
 
@@ -148,28 +151,75 @@ class CommandServiceTest {
         when(idempotencyService.checkRateLimit(owner.getId())).thenReturn(false);
 
         assertThatThrownBy(() -> commandService.issueCommand(onlineVehicle.getId(), request, owner))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(RateLimitExceededException.class)
                 .hasMessageContaining("rate limit exceeded");
     }
 
     @Test
-    void cancelCommand_PendingCommand_Success() {
-        UUID commandId = UUID.randomUUID();
-        RemoteCommand command = RemoteCommand.builder()
-                .id(commandId)
-                .vehicle(onlineVehicle)
-                .issuedBy(owner)
-                .type(CommandType.REMOTE_START)
-                .status(CommandStatus.PENDING)
+    void issueCommand_IdempotencyKeyReusedForAnotherVehicle_Conflict() {
+        RemoteCommand earlier = pendingCommandFor(offlineVehicle);
+        IssueCommandRequest request = IssueCommandRequest.builder()
+                .type(CommandType.LOCK)
+                .idempotencyKey("idem-key-1")
                 .build();
 
-        when(commandRepository.findById(commandId)).thenReturn(Optional.of(command));
+        when(idempotencyService.checkRateLimit(owner.getId())).thenReturn(true);
+        when(idempotencyService.getExistingCommandId(owner.getId(), "idem-key-1"))
+                .thenReturn(Optional.of(earlier.getId().toString()));
+        when(commandRepository.findById(earlier.getId())).thenReturn(Optional.of(earlier));
+
+        assertThatThrownBy(() -> commandService.issueCommand(onlineVehicle.getId(), request, owner))
+                .isInstanceOf(DuplicateResourceException.class);
+        verify(commandRepository, never()).save(any());
+    }
+
+    @Test
+    void getCommandForVehicle_CommandBelongsToAnotherVehicle_NotFound() {
+        RemoteCommand command = pendingCommandFor(offlineVehicle);
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
+
+        assertThatThrownBy(() -> commandService.getCommandForVehicle(onlineVehicle.getId(), command.getId()))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void cancelCommand_PendingCommand_SuccessAndAuditsActingUser() {
+        User familyMember = User.builder()
+                .id(UUID.randomUUID())
+                .email("family@example.com")
+                .fullName("Family Member")
+                .roles(Set.of(Role.FAMILY_MEMBER))
+                .build();
+        RemoteCommand command = pendingCommandFor(onlineVehicle);
+
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
         when(commandRepository.save(command)).thenReturn(command);
 
-        CommandResponse response = commandService.cancelCommand(commandId);
+        CommandResponse response = commandService.cancelCommand(onlineVehicle.getId(), command.getId(), familyMember);
 
         assertThat(response.getStatus()).isEqualTo(CommandStatus.FAILED);
         assertThat(response.getResultMessage()).isEqualTo("Cancelled by user");
         verify(webSocketService).notifyCommandStatusChange(eq(onlineVehicle.getId()), any());
+        verify(auditLogService).log(eq(familyMember.getId()), eq("COMMAND_CANCELLED"), any(), any(), any());
+    }
+
+    @Test
+    void cancelCommand_CommandBelongsToAnotherVehicle_NotFound() {
+        RemoteCommand command = pendingCommandFor(offlineVehicle);
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
+
+        assertThatThrownBy(() -> commandService.cancelCommand(onlineVehicle.getId(), command.getId(), owner))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(commandRepository, never()).save(any());
+    }
+
+    private RemoteCommand pendingCommandFor(Vehicle vehicle) {
+        return RemoteCommand.builder()
+                .id(UUID.randomUUID())
+                .vehicle(vehicle)
+                .issuedBy(owner)
+                .type(CommandType.REMOTE_START)
+                .status(CommandStatus.PENDING)
+                .build();
     }
 }

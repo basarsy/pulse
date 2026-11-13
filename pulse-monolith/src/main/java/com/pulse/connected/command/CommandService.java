@@ -6,6 +6,8 @@ import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.auth.User;
 import com.pulse.connected.command.dto.CommandResponse;
 import com.pulse.connected.command.dto.IssueCommandRequest;
+import com.pulse.connected.common.exception.DuplicateResourceException;
+import com.pulse.connected.common.exception.RateLimitExceededException;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
 import com.pulse.connected.messaging.dto.VehicleCommandEvent;
 import com.pulse.connected.domain.ConnectivityState;
@@ -60,15 +62,21 @@ public class CommandService {
     @Transactional
     public CommandResponse issueCommand(UUID vehicleId, IssueCommandRequest request, User currentUser) {
         if (!idempotencyService.checkRateLimit(currentUser.getId())) {
-            throw new IllegalStateException("Command rate limit exceeded. Please wait before issuing more commands.");
+            throw new RateLimitExceededException("Command rate limit exceeded. Please wait before issuing more commands.");
         }
 
-        // Idempotency check
+        // Idempotency check (keys are scoped to the issuing user)
         if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            Optional<String> existingCommandId = idempotencyService.getExistingCommandId(request.getIdempotencyKey());
+            Optional<String> existingCommandId =
+                    idempotencyService.getExistingCommandId(currentUser.getId(), request.getIdempotencyKey());
             if (existingCommandId.isPresent()) {
-                log.info("Idempotency hit for key [{}]. Returning existing command [{}]", request.getIdempotencyKey(), existingCommandId.get());
-                return getCommandById(UUID.fromString(existingCommandId.get()));
+                RemoteCommand existing = findCommand(UUID.fromString(existingCommandId.get()));
+                if (!existing.getVehicle().getId().equals(vehicleId)) {
+                    throw new DuplicateResourceException(
+                            "Idempotency key already used for a command on a different vehicle");
+                }
+                log.info("Idempotency hit for key [{}]. Returning existing command [{}]", request.getIdempotencyKey(), existing.getId());
+                return mapToResponse(existing);
             }
         }
 
@@ -86,7 +94,7 @@ public class CommandService {
         RemoteCommand saved = commandRepository.save(command);
 
         if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            idempotencyService.storeIdempotencyKey(request.getIdempotencyKey(), saved.getId());
+            idempotencyService.storeIdempotencyKey(currentUser.getId(), request.getIdempotencyKey(), saved.getId());
         }
 
         meterRegistry.counter("pulse.commands.issued", "type", request.getType().name()).increment();
@@ -147,9 +155,8 @@ public class CommandService {
     }
 
     @Transactional
-    public CommandResponse cancelCommand(UUID commandId) {
-        RemoteCommand command = commandRepository.findById(commandId)
-                .orElseThrow(() -> new ResourceNotFoundException("Command not found with ID: " + commandId));
+    public CommandResponse cancelCommand(UUID vehicleId, UUID commandId, User actor) {
+        RemoteCommand command = findCommandForVehicle(vehicleId, commandId);
 
         if (command.getStatus() != CommandStatus.PENDING && command.getStatus() != CommandStatus.SENT) {
             throw new IllegalStateException("Cannot cancel command in status: " + command.getStatus());
@@ -160,17 +167,32 @@ public class CommandService {
         command.setResultMessage("Cancelled by user");
 
         RemoteCommand saved = commandRepository.save(command);
-        auditLogService.log(command.getIssuedBy().getId(), "COMMAND_CANCELLED", "RemoteCommand", commandId.toString(), null);
+        auditLogService.log(actor.getId(), "COMMAND_CANCELLED", "RemoteCommand", commandId.toString(), null);
         CommandResponse response = mapToResponse(saved);
         webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), response);
         return response;
     }
 
     @Transactional(readOnly = true)
-    public CommandResponse getCommandById(UUID commandId) {
-        RemoteCommand command = commandRepository.findById(commandId)
+    public CommandResponse getCommandForVehicle(UUID vehicleId, UUID commandId) {
+        return mapToResponse(findCommandForVehicle(vehicleId, commandId));
+    }
+
+    /**
+     * Callers are authorised per vehicle, so a command is only visible through the vehicle it
+     * belongs to. A mismatch is reported as "not found" to avoid leaking other commands' existence.
+     */
+    private RemoteCommand findCommandForVehicle(UUID vehicleId, UUID commandId) {
+        RemoteCommand command = findCommand(commandId);
+        if (!command.getVehicle().getId().equals(vehicleId)) {
+            throw new ResourceNotFoundException("Command not found with ID: " + commandId);
+        }
+        return command;
+    }
+
+    private RemoteCommand findCommand(UUID commandId) {
+        return commandRepository.findById(commandId)
                 .orElseThrow(() -> new ResourceNotFoundException("Command not found with ID: " + commandId));
-        return mapToResponse(command);
     }
 
     @Transactional(readOnly = true)

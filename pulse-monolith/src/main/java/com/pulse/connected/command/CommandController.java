@@ -38,7 +38,7 @@ public class CommandController {
     public ResponseEntity<CommandResponse> getCommandStatus(
             @PathVariable UUID id,
             @PathVariable UUID commandId) {
-        CommandResponse response = commandService.getCommandById(commandId);
+        CommandResponse response = commandService.getCommandForVehicle(id, commandId);
         return ResponseEntity.ok(response);
     }
 
@@ -49,11 +49,13 @@ public class CommandController {
         return ResponseEntity.ok(history);
     }
 
-    @DeleteMapping("/commands/{commandId}")
+    @DeleteMapping("/vehicles/{id}/commands/{commandId}")
+    @PreAuthorize("@vehicleSecurityService.hasAccess(#id, principal)")
     public ResponseEntity<CommandResponse> cancelCommand(
+            @PathVariable UUID id,
             @PathVariable UUID commandId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        CommandResponse response = commandService.cancelCommand(commandId);
+        CommandResponse response = commandService.cancelCommand(id, commandId, principal.getUser());
         return ResponseEntity.ok(response);
     }
 }

@@ -13,6 +13,8 @@ public class CommandIdempotencyService {
     private static final String IDEMPOTENCY_PREFIX = "command:idempotency:";
     private static final String RATELIMIT_PREFIX = "ratelimit:commands:";
     private static final int MAX_COMMANDS_PER_MINUTE = 10;
+    private static final Duration RATE_LIMIT_WINDOW = Duration.ofSeconds(60);
+    private static final Duration IDEMPOTENCY_TTL = Duration.ofHours(24);
 
     private final StringRedisTemplate redisTemplate;
 
@@ -20,30 +22,40 @@ public class CommandIdempotencyService {
         this.redisTemplate = redisTemplate;
     }
 
-    public Optional<String> getExistingCommandId(String idempotencyKey) {
+    /**
+     * Idempotency keys are client-chosen, so they are namespaced per user: two users sending
+     * the same key must never see each other's commands.
+     */
+    public Optional<String> getExistingCommandId(UUID userId, String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return Optional.empty();
         }
-        String value = redisTemplate.opsForValue().get(IDEMPOTENCY_PREFIX + idempotencyKey);
-        return Optional.ofNullable(value);
+        return Optional.ofNullable(redisTemplate.opsForValue().get(idempotencyRedisKey(userId, idempotencyKey)));
     }
 
-    public void storeIdempotencyKey(String idempotencyKey, UUID commandId) {
+    public void storeIdempotencyKey(UUID userId, String idempotencyKey, UUID commandId) {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             redisTemplate.opsForValue().set(
-                    IDEMPOTENCY_PREFIX + idempotencyKey,
+                    idempotencyRedisKey(userId, idempotencyKey),
                     commandId.toString(),
-                    Duration.ofHours(24)
+                    IDEMPOTENCY_TTL
             );
         }
     }
 
+    /**
+     * Fixed-window rate limit. The window key is created together with its TTL (SET NX EX)
+     * before incrementing, so a crash can never leave a counter without expiry that would
+     * lock the user out permanently.
+     */
     public boolean checkRateLimit(UUID userId) {
-        String key = RATELIMIT_PREFIX + userId.toString();
+        String key = RATELIMIT_PREFIX + userId;
+        redisTemplate.opsForValue().setIfAbsent(key, "0", RATE_LIMIT_WINDOW);
         Long count = redisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1) {
-            redisTemplate.expire(key, Duration.ofSeconds(60));
-        }
         return count != null && count <= MAX_COMMANDS_PER_MINUTE;
+    }
+
+    private static String idempotencyRedisKey(UUID userId, String idempotencyKey) {
+        return IDEMPOTENCY_PREFIX + userId + ":" + idempotencyKey;
     }
 }

@@ -12,7 +12,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "remote_commands")
+@Table(name = "remote_commands", uniqueConstraints = @UniqueConstraint(
+        name = "uq_remote_commands_issuer_idempotency_key", columnNames = {"issued_by", "idempotency_key"}))
 public class RemoteCommand {
 
     @Id
@@ -45,7 +46,7 @@ public class RemoteCommand {
     @Column(name = "result_message", length = 500)
     private String resultMessage;
 
-    @Column(name = "idempotency_key", unique = true, length = 100)
+    @Column(name = "idempotency_key", length = 100)
     private String idempotencyKey;
 
     public RemoteCommand() {}
