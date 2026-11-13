@@ -36,6 +36,14 @@ public class RolloutCampaign {
     @Column(name = "failure_threshold_percent", nullable = false)
     private Double failureThresholdPercent = 10.0;
 
+    /**
+     * Optimistic lock: concurrent progress events or admin actions on the same campaign cannot
+     * both advance or pause it. The loser fails and its Kafka message is retried.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;

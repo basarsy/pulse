@@ -16,6 +16,9 @@ public interface VehicleRepository extends JpaRepository<Vehicle, UUID> {
 
     boolean existsByVin(String vin);
 
+    /** Fleet of one model in a stable order, so rollout stages always target the same vehicles first. */
+    List<Vehicle> findAllByModelIgnoreCaseOrderByVinAsc(String model);
+
     @Query("SELECT DISTINCT v FROM Vehicle v LEFT JOIN v.authorizedUsers au WHERE v.owner.id = :userId OR au.id = :userId")
     List<Vehicle> findAllAccessibleByUserId(@Param("userId") UUID userId);
 }
