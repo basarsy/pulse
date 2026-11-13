@@ -15,6 +15,7 @@ import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +38,7 @@ public class CommandService {
     private final RemoteCommandRepository commandRepository;
     private final VehicleRepository vehicleRepository;
     private final CommandIdempotencyService idempotencyService;
-    private final CommandKafkaProducer kafkaProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final CommandWebSocketService webSocketService;
     private final AuditLogService auditLogService;
     private final MeterRegistry meterRegistry;
@@ -46,14 +47,14 @@ public class CommandService {
             RemoteCommandRepository commandRepository,
             VehicleRepository vehicleRepository,
             CommandIdempotencyService idempotencyService,
-            CommandKafkaProducer kafkaProducer,
+            ApplicationEventPublisher eventPublisher,
             CommandWebSocketService webSocketService,
             AuditLogService auditLogService,
             MeterRegistry meterRegistry) {
         this.commandRepository = commandRepository;
         this.vehicleRepository = vehicleRepository;
         this.idempotencyService = idempotencyService;
-        this.kafkaProducer = kafkaProducer;
+        this.eventPublisher = eventPublisher;
         this.webSocketService = webSocketService;
         this.auditLogService = auditLogService;
         this.meterRegistry = meterRegistry;
@@ -234,7 +235,8 @@ public class CommandService {
                 .idempotencyKey(command.getIdempotencyKey())
                 .build();
 
-        kafkaProducer.dispatchCommand(event);
+        // Recorded in the outbox with this transaction; sent to Kafka after commit (CommandKafkaRelay).
+        eventPublisher.publishEvent(event);
     }
 
     public CommandResponse mapToResponse(RemoteCommand command) {

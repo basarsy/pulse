@@ -11,7 +11,9 @@ import com.pulse.connected.common.exception.DuplicateResourceException;
 import com.pulse.connected.common.exception.RateLimitExceededException;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
 import com.pulse.connected.domain.ConnectivityState;
+import com.pulse.connected.messaging.dto.VehicleCommandEvent;
 import com.pulse.connected.vehicle.Vehicle;
+import org.springframework.context.ApplicationEventPublisher;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +44,7 @@ class CommandServiceTest {
     private CommandIdempotencyService idempotencyService;
 
     @Mock
-    private CommandKafkaProducer kafkaProducer;
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private CommandWebSocketService webSocketService;
@@ -113,7 +115,7 @@ class CommandServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getType()).isEqualTo(CommandType.LOCK);
-        verify(kafkaProducer).dispatchCommand(any());
+        verify(eventPublisher).publishEvent(any(VehicleCommandEvent.class));
         verify(webSocketService).notifyCommandStatusChange(eq(onlineVehicle.getId()), any());
     }
 
@@ -139,7 +141,7 @@ class CommandServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(CommandStatus.PENDING);
-        verify(kafkaProducer, never()).dispatchCommand(any());
+        verify(eventPublisher, never()).publishEvent(any(VehicleCommandEvent.class));
     }
 
     @Test

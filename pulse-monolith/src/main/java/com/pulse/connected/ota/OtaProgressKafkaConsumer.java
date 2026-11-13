@@ -2,6 +2,7 @@ package com.pulse.connected.ota;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import org.slf4j.Logger;
@@ -23,15 +24,12 @@ public class OtaProgressKafkaConsumer {
     }
 
     @KafkaListener(topics = KafkaTopics.OTA_UPDATE_STATUS, groupId = "backend-service-group")
-    public void consumeOtaUpdateProgress(String message) {
-        try {
-            OtaUpdateProgressEvent event = objectMapper.readValue(message, OtaUpdateProgressEvent.class);
-            log.info("Received OTA update progress for update [{}] vehicle [{}] status [{}] progress [{}%]",
-                    event.getUpdateStatusId(), event.getVehicleId(), event.getStatus(), event.getProgressPercent());
+    public void consumeOtaUpdateProgress(String message) throws JsonProcessingException {
+        // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
+        OtaUpdateProgressEvent event = objectMapper.readValue(message, OtaUpdateProgressEvent.class);
+        log.info("Received OTA update progress for update [{}] vehicle [{}] status [{}] progress [{}%]",
+                event.getUpdateStatusId(), event.getVehicleId(), event.getStatus(), event.getProgressPercent());
 
-            campaignService.handleVehicleUpdateProgress(event);
-        } catch (Exception e) {
-            log.error("Failed to process OTA update progress message: {}", message, e);
-        }
+        campaignService.handleVehicleUpdateProgress(event);
     }
 }

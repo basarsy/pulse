@@ -44,6 +44,10 @@ public class VehicleUpdateStatus {
     @Column(name = "error_message", length = 500)
     private String errorMessage;
 
+    /** Index of the rollout stage in which this vehicle was targeted. */
+    @Column(name = "stage_index", nullable = false)
+    private int stageIndex;
+
     public VehicleUpdateStatus() {}
 
     public VehicleUpdateStatus(UUID id, Vehicle vehicle, RolloutCampaign campaign, SoftwareVersion targetVersion, UpdateStatus status, Integer progressPercent, Instant startedAt, Instant completedAt, String errorMessage) {
@@ -89,6 +93,18 @@ public class VehicleUpdateStatus {
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
 
+    public int getStageIndex() { return stageIndex; }
+    public void setStageIndex(int stageIndex) { this.stageIndex = stageIndex; }
+
+    /** True once the vehicle has finished this update, successfully or not. */
+    public boolean isFinished() {
+        return status == UpdateStatus.INSTALLED || isFailed();
+    }
+
+    public boolean isFailed() {
+        return status == UpdateStatus.FAILED || status == UpdateStatus.ROLLED_BACK;
+    }
+
     public static class VehicleUpdateStatusBuilder {
         private UUID id;
         private Vehicle vehicle;
@@ -99,8 +115,11 @@ public class VehicleUpdateStatus {
         private Instant startedAt;
         private Instant completedAt;
         private String errorMessage;
+        private int stageIndex;
 
         VehicleUpdateStatusBuilder() {}
+
+        public VehicleUpdateStatusBuilder stageIndex(int stageIndex) { this.stageIndex = stageIndex; return this; }
 
         public VehicleUpdateStatusBuilder id(UUID id) { this.id = id; return this; }
         public VehicleUpdateStatusBuilder vehicle(Vehicle vehicle) { this.vehicle = vehicle; return this; }
@@ -113,7 +132,9 @@ public class VehicleUpdateStatus {
         public VehicleUpdateStatusBuilder errorMessage(String errorMessage) { this.errorMessage = errorMessage; return this; }
 
         public VehicleUpdateStatus build() {
-            return new VehicleUpdateStatus(id, vehicle, campaign, targetVersion, status, progressPercent, startedAt, completedAt, errorMessage);
+            VehicleUpdateStatus built = new VehicleUpdateStatus(id, vehicle, campaign, targetVersion, status, progressPercent, startedAt, completedAt, errorMessage);
+            built.setStageIndex(stageIndex);
+            return built;
         }
     }
 }

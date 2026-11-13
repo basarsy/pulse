@@ -2,6 +2,7 @@ package com.pulse.connected.command;
 
 import com.pulse.connected.messaging.KafkaTopics;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.messaging.dto.CommandResultEvent;
@@ -24,15 +25,12 @@ public class CommandResultKafkaConsumer {
     }
 
     @KafkaListener(topics = KafkaTopics.VEHICLE_COMMAND_RESULTS, groupId = "backend-service-group")
-    public void consumeCommandResult(String message) {
-        try {
-            CommandResultEvent event = objectMapper.readValue(message, CommandResultEvent.class);
-            log.info("Received command result for command [{}] status [{}] vehicle [{}]",
-                    event.getCommandId(), event.getStatus(), event.getVehicleId());
+    public void consumeCommandResult(String message) throws JsonProcessingException {
+        // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
+        CommandResultEvent event = objectMapper.readValue(message, CommandResultEvent.class);
+        log.info("Received command result for command [{}] status [{}] vehicle [{}]",
+                event.getCommandId(), event.getStatus(), event.getVehicleId());
 
-            commandService.processCommandResult(event.getCommandId(), event.getStatus(), event.getResultMessage());
-        } catch (Exception e) {
-            log.error("Failed to process command result message: {}", message, e);
-        }
+        commandService.processCommandResult(event.getCommandId(), event.getStatus(), event.getResultMessage());
     }
 }

@@ -25,6 +25,14 @@ spring:
     baseline-on-migrate: true
     locations: classpath:db/migration
 
+  # Transactional outbox: the event_publication table is created by Flyway (V3).
+  modulith:
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: false
+      republish-outstanding-events-on-restart: true
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}

@@ -2,7 +2,9 @@ package com.pulse.connected.ota;
 
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
+import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.domain.CampaignStatus;
 import com.pulse.connected.domain.ConnectivityState;
@@ -14,7 +16,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.stubbing.Answer;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
@@ -40,7 +44,7 @@ class RolloutCampaignServiceTest {
     private VehicleUpdateStatusRepository vehicleUpdateStatusRepository;
 
     @Mock
-    private OtaKafkaProducer otaKafkaProducer;
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private OtaWebSocketService otaWebSocketService;
@@ -145,27 +149,136 @@ class RolloutCampaignServiceTest {
     }
 
     @Test
-    void startCampaign_ExecutesStageAndDispatchesKafka() {
+    void startCampaign_DispatchesFirstStageToItsShareOfTheFleet() {
         when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
-        when(vehicleRepository.findAll()).thenReturn(List.of(vehicle1, vehicle2));
-
-        VehicleUpdateStatus updateStatus = VehicleUpdateStatus.builder()
-                .id(UUID.randomUUID())
-                .vehicle(vehicle1)
-                .campaign(campaign)
-                .targetVersion(version)
-                .status(UpdateStatus.PENDING)
-                .build();
-
-        when(vehicleUpdateStatusRepository.findByVehicleIdAndCampaignId(any(), any())).thenReturn(Optional.of(updateStatus));
-        when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
+        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
+                .thenReturn(List.of(vehicle1, vehicle2));
+        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of());
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         CampaignResponse response = campaignService.startCampaign(campaign.getId(), admin);
 
         assertThat(response).isNotNull();
         assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.IN_PROGRESS);
-        verify(otaKafkaProducer, atLeastOnce()).dispatchOtaInstruction(any());
+        // Stage 1 is 50% of two vehicles: exactly one instruction, to the first vehicle by VIN.
+        ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
+        verify(eventPublisher).publishEvent(sent.capture());
+        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle1.getId());
+    }
+
+    @Test
+    void laterStage_OnlyInstructsVehiclesNotTargetedInEarlierStages() {
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1); // 100%
+        VehicleUpdateStatus stage1Update = update(vehicle1, 0, UpdateStatus.INSTALLED);
+        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
+                .thenReturn(List.of(vehicle1, vehicle2));
+        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of(stage1Update));
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+
+        campaignService.executeActiveStage(campaign);
+
+        ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
+        verify(eventPublisher).publishEvent(sent.capture());
+        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        assertThat(stage1Update.getStatus()).isEqualTo(UpdateStatus.INSTALLED);
+    }
+
+    @Test
+    void vehiclesAlreadyOnTargetVersion_AreNotInstructed() {
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1); // 100%
+        vehicle1.setCurrentSoftwareVersion(version.getVersionLabel());
+        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
+                .thenReturn(List.of(vehicle1, vehicle2));
+        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of());
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+
+        campaignService.executeActiveStage(campaign);
+
+        ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
+        verify(eventPublisher).publishEvent(sent.capture());
+        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+    }
+
+    @Test
+    void failureRate_IsEvaluatedPerStage() {
+        // Stage 1: two successes. Stage 2: one failure out of two (50%). Campaign-wide that is
+        // 25%, below the 30% threshold, but the current stage is clearly unhealthy.
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1);
+        campaign.setFailureThresholdPercent(30.0);
+        Vehicle vehicle3 = Vehicle.builder().id(UUID.randomUUID()).vin("WBA33333333333333").model(campaign.getTargetModel()).build();
+        Vehicle vehicle4 = Vehicle.builder().id(UUID.randomUUID()).vin("WBA44444444444444").model(campaign.getTargetModel()).build();
+        VehicleUpdateStatus failing = update(vehicle4, 1, UpdateStatus.INSTALLING);
+        List<VehicleUpdateStatus> all = List.of(
+                update(vehicle1, 0, UpdateStatus.INSTALLED),
+                update(vehicle2, 0, UpdateStatus.INSTALLED),
+                update(vehicle3, 1, UpdateStatus.DOWNLOADING),
+                failing);
+        when(vehicleUpdateStatusRepository.findById(failing.getId())).thenReturn(Optional.of(failing));
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(all);
+        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+
+        campaignService.handleVehicleUpdateProgress(progress(failing, UpdateStatus.FAILED));
+
+        assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.PAUSED);
+    }
+
+    @Test
+    void staleProgressEvent_DoesNotMoveStatusBackwards() {
+        VehicleUpdateStatus installed = update(vehicle1, 0, UpdateStatus.INSTALLED);
+        when(vehicleUpdateStatusRepository.findById(installed.getId())).thenReturn(Optional.of(installed));
+
+        campaignService.handleVehicleUpdateProgress(progress(installed, UpdateStatus.DOWNLOADING));
+
+        assertThat(installed.getStatus()).isEqualTo(UpdateStatus.INSTALLED);
+        verify(vehicleUpdateStatusRepository, never()).save(any());
+    }
+
+    @Test
+    void failedUpdate_CanStillBeReportedAsRolledBack() {
+        VehicleUpdateStatus failed = update(vehicle1, 0, UpdateStatus.FAILED);
+        campaign.setStatus(CampaignStatus.PAUSED);
+        when(vehicleUpdateStatusRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+
+        campaignService.handleVehicleUpdateProgress(progress(failed, UpdateStatus.ROLLED_BACK));
+
+        assertThat(failed.getStatus()).isEqualTo(UpdateStatus.ROLLED_BACK);
+    }
+
+    private VehicleUpdateStatus update(Vehicle vehicle, int stageIndex, UpdateStatus status) {
+        return VehicleUpdateStatus.builder()
+                .id(UUID.randomUUID())
+                .vehicle(vehicle)
+                .campaign(campaign)
+                .targetVersion(version)
+                .stageIndex(stageIndex)
+                .status(status)
+                .build();
+    }
+
+    private OtaUpdateProgressEvent progress(VehicleUpdateStatus update, UpdateStatus status) {
+        return OtaUpdateProgressEvent.builder()
+                .updateStatusId(update.getId())
+                .vehicleId(update.getVehicle().getId())
+                .campaignId(campaign.getId())
+                .status(status)
+                .progressPercent(50)
+                .build();
+    }
+
+    private static Answer<VehicleUpdateStatus> saved() {
+        return invocation -> {
+            VehicleUpdateStatus status = invocation.getArgument(0);
+            if (status.getId() == null) {
+                status.setId(UUID.randomUUID());
+            }
+            return status;
+        };
     }
 
     @Test

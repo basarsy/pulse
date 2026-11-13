@@ -76,7 +76,7 @@ flowchart LR
 - **Telemetry Ingestion Pipeline**: Vehicle diagnostics (battery/fuel level, odometer, engine temperature, GPS) consumed from Kafka (`vehicle.telemetry`) and persisted in `telemetry_snapshots`.
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
 - **Idempotency & Rate Limiting**: Redis-backed, per-user idempotency keys and a fixed-window rate limit (10 commands/min, `429` when exceeded).
-- **Fault Tolerance**: Resilience4j circuit breakers and exponential retries on Kafka dispatch.
+- **Reliable Messaging**: Transactional outbox for everything sent to vehicles, retries with backoff and dead-letter topics for everything received, plus Resilience4j circuit breaker and retry on Kafka sends.
 - **Observability**: Asynchronous audit log, Micrometer domain metrics, Prometheus & Grafana.
 - **Vehicle Simulator**: Mock ECU that emits heartbeats and telemetry and executes commands and OTA updates (enable with `SIMULATOR_ENABLED=true` or the `local` profile).
 - **Kubernetes Ready**: Kustomize manifests for the app, dashboard, Postgres, Kafka, Redis, Prometheus, Grafana and an Nginx ingress; secrets are generated from a git-ignored env file.
@@ -120,10 +120,14 @@ flowchart LR
   - Domain modules verified by Spring Modulith (`ModularityTests`)
   - End-to-end `ApplicationSmokeTest` against real Postgres and Redis (Testcontainers) and embedded Kafka
   - Security fixes: no role escalation on sign-up, typed access/refresh tokens, per-vehicle command authorization, per-user idempotency keys, authenticated telemetry ingest, locked-down actuator
+- [x] **Phase 7 — Reliable messaging & rollout correctness**
+  - Transactional outbox (Spring Modulith event publication registry): commands and OTA instructions are sent to Kafka only after commit and retried until delivered
+  - Consumer retries with exponential backoff and dead-letter topics (`<topic>.DLT`) instead of silently dropped messages
+  - Staged rollouts: per-stage failure evaluation, no re-instruction of earlier-stage vehicles, forward-only update status transitions, optimistic locking on campaigns
+  - `KafkaRoundTripTest` drives commands and a multi-stage rollout through Kafka and the simulator end to end
 - [ ] **Next**
   - Wire the dashboard's vehicle, rollout and dashboard pages to the API (they currently show sample data) and use refresh tokens
   - Authenticate STOMP connections with the JWT and authorize topic subscriptions per vehicle
-  - Transactional outbox for Kafka dispatch, dead-letter topics for consumers, optimistic locking on campaigns
   - Make the app safe to scale out: ShedLock for `@Scheduled` jobs and an external STOMP broker relay
   - Device authentication for vehicles (mTLS / device credentials)
 
