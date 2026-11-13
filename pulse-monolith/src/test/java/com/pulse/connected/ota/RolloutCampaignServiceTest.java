@@ -2,7 +2,9 @@ package com.pulse.connected.ota;
 
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
+import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.domain.CampaignStatus;
 import com.pulse.connected.domain.ConnectivityState;
@@ -40,7 +42,7 @@ class RolloutCampaignServiceTest {
     private VehicleUpdateStatusRepository vehicleUpdateStatusRepository;
 
     @Mock
-    private OtaKafkaProducer otaKafkaProducer;
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private OtaWebSocketService otaWebSocketService;
@@ -165,7 +167,7 @@ class RolloutCampaignServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.IN_PROGRESS);
-        verify(otaKafkaProducer, atLeastOnce()).dispatchOtaInstruction(any());
+        verify(eventPublisher, atLeastOnce()).publishEvent(any(OtaInstructionEvent.class));
     }
 
     @Test

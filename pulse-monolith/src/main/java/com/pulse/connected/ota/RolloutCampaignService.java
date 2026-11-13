@@ -13,6 +13,7 @@ import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +35,7 @@ public class RolloutCampaignService {
     private final SoftwareVersionRepository softwareVersionRepository;
     private final VehicleRepository vehicleRepository;
     private final VehicleUpdateStatusRepository vehicleUpdateStatusRepository;
-    private final OtaKafkaProducer otaKafkaProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final OtaWebSocketService otaWebSocketService;
     private final SoftwareVersionService softwareVersionService;
     private final AuditLogService auditLogService;
@@ -45,7 +46,7 @@ public class RolloutCampaignService {
             SoftwareVersionRepository softwareVersionRepository,
             VehicleRepository vehicleRepository,
             VehicleUpdateStatusRepository vehicleUpdateStatusRepository,
-            OtaKafkaProducer otaKafkaProducer,
+            ApplicationEventPublisher eventPublisher,
             OtaWebSocketService otaWebSocketService,
             SoftwareVersionService softwareVersionService,
             AuditLogService auditLogService,
@@ -54,7 +55,7 @@ public class RolloutCampaignService {
         this.softwareVersionRepository = softwareVersionRepository;
         this.vehicleRepository = vehicleRepository;
         this.vehicleUpdateStatusRepository = vehicleUpdateStatusRepository;
-        this.otaKafkaProducer = otaKafkaProducer;
+        this.eventPublisher = eventPublisher;
         this.otaWebSocketService = otaWebSocketService;
         this.softwareVersionService = softwareVersionService;
         this.auditLogService = auditLogService;
@@ -252,7 +253,8 @@ public class RolloutCampaignService {
                     .checksum(campaign.getSoftwareVersion().getChecksum())
                     .build();
 
-            otaKafkaProducer.dispatchOtaInstruction(instruction);
+            // Recorded in the outbox with this transaction; sent to Kafka after commit (OtaKafkaRelay).
+            eventPublisher.publishEvent(instruction);
         }
 
         campaignRepository.save(campaign);

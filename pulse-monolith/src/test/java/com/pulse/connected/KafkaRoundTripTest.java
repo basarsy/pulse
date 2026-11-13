@@ -7,6 +7,7 @@ import com.pulse.connected.auth.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.util.HashSet;
@@ -30,6 +31,9 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
     @Test
     void commandToOnlineVehicleCompletesThroughKafka() throws Exception {
         String token = registerAndGetToken("owner");
@@ -40,6 +44,7 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
 
         await().atMost(TIMEOUT).untilAsserted(() ->
                 assertThat(command(token, vehicleId, commandId).get("status").asText()).isEqualTo("COMPLETED"));
+        assertOutboxDrained();
     }
 
     @Test
@@ -86,6 +91,13 @@ class KafkaRoundTripTest extends AbstractIntegrationTest {
             assertThat(campaign.get("vehiclesInstalled").asLong()).isEqualTo(2);
             assertThat(campaign.get("vehiclesFailed").asLong()).isZero();
         });
+        assertOutboxDrained();
+    }
+
+    /** Every outbox publication (command / OTA instruction) must eventually be sent to Kafka. */
+    private void assertOutboxDrained() {
+        await().atMost(TIMEOUT).untilAsserted(() -> assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM event_publication WHERE completion_date IS NULL", Integer.class)).isZero());
     }
 
     private String issueCommand(String token, String vehicleId, String type) throws Exception {
