@@ -1,5 +1,6 @@
 package com.pulse.connected.ota.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -21,6 +22,7 @@ public class CreateCampaignRequest {
     private Double failureThresholdPercent = 10.0;
 
     @ValidStagePercentages
+    @JsonDeserialize(contentUsing = StrictIntegerDeserializer.class)
     private List<Integer> stagePercentages;
 
     public CreateCampaignRequest() {}
