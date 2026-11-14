@@ -3,7 +3,7 @@
 export type Role = 'OWNER' | 'FAMILY_MEMBER' | 'DEALER_STAFF' | 'FLEET_ADMIN' | 'SYSTEM_ADMIN';
 export type ConnectivityState = 'ONLINE' | 'OFFLINE' | 'SLEEPING';
 export type CommandType = 'LOCK' | 'UNLOCK' | 'REMOTE_START' | 'FLASH_LIGHTS' | 'LOCATE' | 'CLIMATE_ON' | 'CHECK_STATUS';
-export type CommandStatus = 'PENDING' | 'SENT' | 'ACKNOWLEDGED' | 'COMPLETED' | 'FAILED' | 'TIMED_OUT';
+export type CommandStatus = 'PENDING' | 'SENT' | 'ACKNOWLEDGED' | 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'CANCELLED';
 export type CampaignStatus = 'DRAFT' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'ABORTED';
 export type StageStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 export type UpdateStatus = 'PENDING' | 'DOWNLOADING' | 'DOWNLOADED' | 'INSTALLING' | 'INSTALLED' | 'FAILED' | 'ROLLED_BACK';
@@ -51,6 +51,7 @@ export interface Command {
   type: CommandType;
   status: CommandStatus;
   requestedAt: string;
+  sentAt: string | null;
   resolvedAt: string | null;
   resultMessage: string | null;
 }

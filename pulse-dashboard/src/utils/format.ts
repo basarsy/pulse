@@ -29,7 +29,7 @@ export const connectivityColor: Record<ConnectivityState, BadgeColor> = {
 };
 
 export const commandColor: Record<CommandStatus, BadgeColor> = {
-  PENDING: 'gray', SENT: 'blue', ACKNOWLEDGED: 'blue', COMPLETED: 'green', FAILED: 'red', TIMED_OUT: 'yellow',
+  PENDING: 'gray', SENT: 'blue', ACKNOWLEDGED: 'blue', COMPLETED: 'green', FAILED: 'red', TIMED_OUT: 'yellow', CANCELLED: 'gray',
 };
 
 export const campaignColor: Record<CampaignStatus, BadgeColor> = {
