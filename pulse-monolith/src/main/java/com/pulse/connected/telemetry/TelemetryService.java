@@ -12,6 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -58,7 +59,8 @@ public class TelemetryService {
         vehicle.setOdometerKm(event.getOdometerKm());
         vehicle.setLastLat(event.getLat());
         vehicle.setLastLng(event.getLng());
-        vehicle.setLastSeenAt(event.getTimestamp());
+        // Server time, not the vehicle's clock: offline detection relies on lastSeenAt.
+        vehicle.setLastSeenAt(Instant.now());
         vehicleRepository.save(vehicle);
 
         meterRegistry.counter("pulse.telemetry.ingested").increment();

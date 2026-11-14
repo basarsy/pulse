@@ -6,14 +6,14 @@ import { useAsync } from '../hooks/useAsync';
 import type { Campaign, Command, Vehicle } from '../api/types';
 import { label } from '../utils/format';
 
-const FINAL_COMMAND_STATES = ['COMPLETED', 'FAILED', 'TIMED_OUT'];
+const FINAL_COMMAND_STATES = ['COMPLETED', 'FAILED', 'TIMED_OUT', 'CANCELLED'];
 
 function useCommandNotifications(destination: string | null) {
   const { addNotification } = useNotifications();
   useTopic<Command>(destination, command => {
     if (FINAL_COMMAND_STATES.includes(command.status)) {
       addNotification(`${label(command.type)} ${label(command.status).toLowerCase()}`,
-        command.status === 'COMPLETED' ? 'success' : 'error');
+        command.status === 'COMPLETED' ? 'success' : command.status === 'CANCELLED' ? 'warning' : 'error');
     }
   });
 }

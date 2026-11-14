@@ -14,19 +14,21 @@ public class CommandResponse {
     private CommandType type;
     private CommandStatus status;
     private Instant requestedAt;
+    private Instant sentAt;
     private Instant resolvedAt;
     private String resultMessage;
     private String idempotencyKey;
 
     public CommandResponse() {}
 
-    public CommandResponse(UUID id, UUID vehicleId, UUID issuedByUserId, CommandType type, CommandStatus status, Instant requestedAt, Instant resolvedAt, String resultMessage, String idempotencyKey) {
+    public CommandResponse(UUID id, UUID vehicleId, UUID issuedByUserId, CommandType type, CommandStatus status, Instant requestedAt, Instant sentAt, Instant resolvedAt, String resultMessage, String idempotencyKey) {
         this.id = id;
         this.vehicleId = vehicleId;
         this.issuedByUserId = issuedByUserId;
         this.type = type;
         this.status = status;
         this.requestedAt = requestedAt;
+        this.sentAt = sentAt;
         this.resolvedAt = resolvedAt;
         this.resultMessage = resultMessage;
         this.idempotencyKey = idempotencyKey;
@@ -54,6 +56,9 @@ public class CommandResponse {
     public Instant getRequestedAt() { return requestedAt; }
     public void setRequestedAt(Instant requestedAt) { this.requestedAt = requestedAt; }
 
+    public Instant getSentAt() { return sentAt; }
+    public void setSentAt(Instant sentAt) { this.sentAt = sentAt; }
+
     public Instant getResolvedAt() { return resolvedAt; }
     public void setResolvedAt(Instant resolvedAt) { this.resolvedAt = resolvedAt; }
 
@@ -70,6 +75,7 @@ public class CommandResponse {
         private CommandType type;
         private CommandStatus status;
         private Instant requestedAt;
+        private Instant sentAt;
         private Instant resolvedAt;
         private String resultMessage;
         private String idempotencyKey;
@@ -82,12 +88,13 @@ public class CommandResponse {
         public CommandResponseBuilder type(CommandType type) { this.type = type; return this; }
         public CommandResponseBuilder status(CommandStatus status) { this.status = status; return this; }
         public CommandResponseBuilder requestedAt(Instant requestedAt) { this.requestedAt = requestedAt; return this; }
+        public CommandResponseBuilder sentAt(Instant sentAt) { this.sentAt = sentAt; return this; }
         public CommandResponseBuilder resolvedAt(Instant resolvedAt) { this.resolvedAt = resolvedAt; return this; }
         public CommandResponseBuilder resultMessage(String resultMessage) { this.resultMessage = resultMessage; return this; }
         public CommandResponseBuilder idempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; return this; }
 
         public CommandResponse build() {
-            return new CommandResponse(id, vehicleId, issuedByUserId, type, status, requestedAt, resolvedAt, resultMessage, idempotencyKey);
+            return new CommandResponse(id, vehicleId, issuedByUserId, type, status, requestedAt, sentAt, resolvedAt, resultMessage, idempotencyKey);
         }
     }
 }

@@ -1,14 +1,12 @@
 package com.pulse.connected.command;
 
-import com.pulse.connected.domain.CommandType;
 import com.pulse.connected.domain.CommandStatus;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +20,9 @@ public interface RemoteCommandRepository extends JpaRepository<RemoteCommand, UU
 
     List<RemoteCommand> findAllByVehicleIdAndStatusIn(UUID vehicleId, List<CommandStatus> statuses);
 
-    @Query("SELECT c FROM RemoteCommand c WHERE c.status IN ('PENDING', 'SENT') AND c.requestedAt < :cutoff")
-    List<RemoteCommand> findStaleCommands(@Param("cutoff") Instant cutoff);
+    /** Commands in {@code status} requested before {@code cutoff} (queued commands that expired). */
+    List<RemoteCommand> findAllByStatusAndRequestedAtBefore(CommandStatus status, Instant cutoff);
+
+    /** Commands in one of {@code statuses} sent before {@code cutoff} (dispatched commands that timed out). */
+    List<RemoteCommand> findAllByStatusInAndSentAtBefore(Collection<CommandStatus> statuses, Instant cutoff);
 }

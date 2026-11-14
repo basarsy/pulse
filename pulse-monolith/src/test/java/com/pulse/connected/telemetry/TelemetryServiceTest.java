@@ -86,9 +86,45 @@ class TelemetryServiceTest {
         assertEquals(12000.0, updatedVehicle.getOdometerKm());
         assertEquals(48.1351, updatedVehicle.getLastLat());
         assertEquals(11.5820, updatedVehicle.getLastLng());
-        assertEquals(event.getTimestamp(), updatedVehicle.getLastSeenAt());
 
         assertEquals(1.0, meterRegistry.counter("pulse.telemetry.ingested").count());
+    }
+
+    /**
+     * Offline detection relies on lastSeenAt, so it must come from the server clock: a vehicle
+     * clock running ahead (or a missing timestamp) must not keep it ONLINE or mark it OFFLINE.
+     * The snapshot keeps the vehicle's own timestamp, which is when the reading was taken.
+     */
+    @Test
+    void ingestTelemetry_lastSeenAtUsesServerClock() {
+        Instant vehicleClock = Instant.now().plus(java.time.Duration.ofDays(1));
+        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder()
+                .vehicleId(vehicleId)
+                .timestamp(vehicleClock)
+                .build();
+        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
+
+        Instant before = Instant.now();
+        telemetryService.ingestTelemetry(event);
+        Instant after = Instant.now();
+
+        ArgumentCaptor<TelemetrySnapshot> snapshotCaptor = ArgumentCaptor.forClass(TelemetrySnapshot.class);
+        verify(telemetrySnapshotRepository).save(snapshotCaptor.capture());
+        assertEquals(vehicleClock, snapshotCaptor.getValue().getRecordedAt());
+
+        Instant lastSeenAt = testVehicle.getLastSeenAt();
+        assertTrue(!lastSeenAt.isBefore(before) && !lastSeenAt.isAfter(after),
+                "lastSeenAt should be server time, was " + lastSeenAt);
+    }
+
+    @Test
+    void ingestTelemetry_missingTimestamp_stillMarksVehicleSeen() {
+        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder().vehicleId(vehicleId).build();
+        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
+
+        telemetryService.ingestTelemetry(event);
+
+        assertNotNull(testVehicle.getLastSeenAt());
     }
 
     @Test

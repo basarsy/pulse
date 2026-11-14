@@ -31,6 +31,6 @@ public class CommandResultKafkaConsumer {
         log.info("Received command result for command [{}] status [{}] vehicle [{}]",
                 event.getCommandId(), event.getStatus(), event.getVehicleId());
 
-        commandService.processCommandResult(event.getCommandId(), event.getStatus(), event.getResultMessage());
+        commandService.processCommandResult(event.getCommandId(), event.getVehicleId(), event.getStatus(), event.getResultMessage());
     }
 }

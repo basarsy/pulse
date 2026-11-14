@@ -71,7 +71,7 @@ flowchart LR
 
 ## 🚀 Key Capabilities
 
-- **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real time over STOMP WebSockets. Commands for offline vehicles are queued and flushed when the vehicle reconnects.
+- **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real time over STOMP WebSockets. A vehicle is marked offline after 60s without a heartbeat; commands for offline vehicles are queued and flushed when it reconnects. Queued commands expire after 15 minutes, so a stale `UNLOCK` never fires hours later, and dispatched commands time out 60s after they were sent. Late or duplicate results never reopen a finished command. All limits are configurable (`pulse.connectivity.*`, `pulse.commands.*`).
 - **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold.
 - **Telemetry Ingestion Pipeline**: Vehicle diagnostics (battery/fuel level, odometer, engine temperature, GPS) consumed from Kafka (`vehicle.telemetry`) and persisted in `telemetry_snapshots`.
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
@@ -98,11 +98,11 @@ flowchart LR
   - SpEL method-security ownership and family member authorization (`/api/v1/vehicles/{id}/authorize`)
   - Fleet-wide vehicle management endpoint (`/api/v1/fleet/vehicles`)
 - [x] **Phase 2 — Remote Command Engine**
-  - Remote command state machine (`PENDING` -> `SENT` -> `ACKNOWLEDGED` -> `COMPLETED` / `FAILED` / `TIMED_OUT`)
+  - Remote command state machine (`PENDING` -> `SENT` -> `ACKNOWLEDGED` -> `COMPLETED` / `FAILED` / `TIMED_OUT` / `CANCELLED`; final states are final)
   - Kafka command pipeline (`vehicle.commands` and `vehicle.command-results`)
   - Real-time STOMP WebSocket push channel (`/topic/vehicles/{vehicleId}/commands`)
   - Redis-backed idempotency tracking (24h TTL) and rate limiting (10 commands/min per user)
-  - Scheduled command timeout job (`@Scheduled`)
+  - Scheduled command timeout job (`@Scheduled`): queue expiry and execution timeout, plus heartbeat-based offline detection
 - [x] **Phase 3 — OTA & Fleet Rollout Engine**
   - Software version package registry (`/api/v1/software-versions`)
   - Staged canary rollout campaign state machine (`DRAFT` -> `IN_PROGRESS` -> `PAUSED` -> `COMPLETED` / `ABORTED`)
