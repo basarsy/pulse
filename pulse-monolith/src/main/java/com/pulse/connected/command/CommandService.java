@@ -37,7 +37,7 @@ public class CommandService {
 
     private final RemoteCommandRepository commandRepository;
     private final VehicleRepository vehicleRepository;
-    private final CommandIdempotencyService idempotencyService;
+    private final CommandRateLimiter rateLimiter;
     private final ApplicationEventPublisher eventPublisher;
     private final CommandWebSocketService webSocketService;
     private final AuditLogService auditLogService;
@@ -47,7 +47,7 @@ public class CommandService {
     public CommandService(
             RemoteCommandRepository commandRepository,
             VehicleRepository vehicleRepository,
-            CommandIdempotencyService idempotencyService,
+            CommandRateLimiter rateLimiter,
             ApplicationEventPublisher eventPublisher,
             CommandWebSocketService webSocketService,
             AuditLogService auditLogService,
@@ -55,7 +55,7 @@ public class CommandService {
             CommandTimeoutProperties timeouts) {
         this.commandRepository = commandRepository;
         this.vehicleRepository = vehicleRepository;
-        this.idempotencyService = idempotencyService;
+        this.rateLimiter = rateLimiter;
         this.eventPublisher = eventPublisher;
         this.webSocketService = webSocketService;
         this.auditLogService = auditLogService;
@@ -65,23 +65,22 @@ public class CommandService {
 
     @Transactional
     public CommandResponse issueCommand(UUID vehicleId, IssueCommandRequest request, User currentUser) {
-        if (!idempotencyService.checkRateLimit(currentUser.getId())) {
-            throw new RateLimitExceededException("Command rate limit exceeded. Please wait before issuing more commands.");
+        // A blank key means "no key"; storing it would make the second blank-key request collide.
+        String idempotencyKey = request.getIdempotencyKey() == null || request.getIdempotencyKey().isBlank()
+                ? null : request.getIdempotencyKey();
+
+        // Idempotency is decided by the database (unique on issued_by, idempotency_key); keys never
+        // expire. A replay returns the original command and does not count against the rate limit.
+        if (idempotencyKey != null) {
+            Optional<RemoteCommand> existing =
+                    commandRepository.findByIssuedByIdAndIdempotencyKey(currentUser.getId(), idempotencyKey);
+            if (existing.isPresent()) {
+                return replay(existing.get(), vehicleId, request);
+            }
         }
 
-        // Idempotency check (keys are scoped to the issuing user)
-        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            Optional<String> existingCommandId =
-                    idempotencyService.getExistingCommandId(currentUser.getId(), request.getIdempotencyKey());
-            if (existingCommandId.isPresent()) {
-                RemoteCommand existing = findCommand(UUID.fromString(existingCommandId.get()));
-                if (!existing.getVehicle().getId().equals(vehicleId)) {
-                    throw new DuplicateResourceException(
-                            "Idempotency key already used for a command on a different vehicle");
-                }
-                log.info("Idempotency hit for key [{}]. Returning existing command [{}]", request.getIdempotencyKey(), existing.getId());
-                return mapToResponse(existing);
-            }
+        if (!rateLimiter.checkRateLimit(currentUser.getId())) {
+            throw new RateLimitExceededException("Command rate limit exceeded. Please wait before issuing more commands.");
         }
 
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
@@ -92,14 +91,10 @@ public class CommandService {
                 .issuedBy(currentUser)
                 .type(request.getType())
                 .status(CommandStatus.PENDING)
-                .idempotencyKey(request.getIdempotencyKey())
+                .idempotencyKey(idempotencyKey)
                 .build();
 
         RemoteCommand saved = commandRepository.save(command);
-
-        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            idempotencyService.storeIdempotencyKey(currentUser.getId(), request.getIdempotencyKey(), saved.getId());
-        }
 
         meterRegistry.counter("pulse.commands.issued", "type", request.getType().name()).increment();
         auditLogService.log(currentUser.getId(), "COMMAND_ISSUED", "RemoteCommand", saved.getId().toString(), Map.of("type", request.getType().name(), "vehicleId", vehicleId.toString()));
@@ -115,6 +110,21 @@ public class CommandService {
         CommandResponse response = mapToResponse(saved);
         webSocketService.notifyCommandStatusChange(vehicleId, response);
         return response;
+    }
+
+    /**
+     * Same user and key: the same request repeated returns the original command, with no new side
+     * effects. Reusing the key for a different vehicle or command type is a client error.
+     */
+    private CommandResponse replay(RemoteCommand existing, UUID vehicleId, IssueCommandRequest request) {
+        if (!existing.getVehicle().getId().equals(vehicleId)) {
+            throw new DuplicateResourceException("Idempotency key already used for a command on a different vehicle");
+        }
+        if (existing.getType() != request.getType()) {
+            throw new DuplicateResourceException("Idempotency key already used for a " + existing.getType() + " command");
+        }
+        log.info("Idempotency hit for key [{}]. Returning existing command [{}]", existing.getIdempotencyKey(), existing.getId());
+        return mapToResponse(existing);
     }
 
     @Transactional
