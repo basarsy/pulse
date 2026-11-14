@@ -62,4 +62,8 @@ public interface VehicleUpdateStatusRepository extends JpaRepository<VehicleUpda
                                          @Param("model") String model,
                                          @Param("lastVin") String lastVin,
                                          @Param("targetVersionLabel") String targetVersionLabel);
+
+    /** The campaign an update belongs to, without loading the update (it is read after the campaign lock). */
+    @Query("SELECT u.campaign.id FROM VehicleUpdateStatus u WHERE u.id = :id")
+    Optional<UUID> findCampaignIdById(@Param("id") UUID updateStatusId);
 }

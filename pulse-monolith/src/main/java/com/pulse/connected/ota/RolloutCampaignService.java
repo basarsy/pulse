@@ -103,7 +103,7 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse startCampaign(UUID campaignId, User actor) {
-        RolloutCampaign campaign = campaignRepository.findById(campaignId)
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
         if (campaign.getStatus() != CampaignStatus.DRAFT && campaign.getStatus() != CampaignStatus.PAUSED) {
@@ -122,7 +122,7 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse pauseCampaign(UUID campaignId, User actor) {
-        RolloutCampaign campaign = campaignRepository.findById(campaignId)
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
         if (campaign.getStatus() != CampaignStatus.IN_PROGRESS) {
@@ -147,7 +147,7 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse abortCampaign(UUID campaignId, User actor) {
-        RolloutCampaign campaign = campaignRepository.findById(campaignId)
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
         if (campaign.getStatus() == CampaignStatus.COMPLETED || campaign.getStatus() == CampaignStatus.ABORTED) {
@@ -167,6 +167,14 @@ public class RolloutCampaignService {
 
     @Transactional
     public void handleVehicleUpdateProgress(OtaUpdateProgressEvent event) {
+        // Progress events are consumed in parallel. Lock the campaign first, and only then read the
+        // update: events for one campaign are applied one after another, each seeing the previous
+        // one's committed changes, so the last one of a stage reliably sees the stage finished
+        // (no stall) and only it advances (no double start).
+        UUID campaignId = vehicleUpdateStatusRepository.findCampaignIdById(event.getUpdateStatusId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.getUpdateStatusId()));
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
         VehicleUpdateStatus updateStatus = vehicleUpdateStatusRepository.findById(event.getUpdateStatusId())
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.getUpdateStatusId()));
 
@@ -203,8 +211,8 @@ public class RolloutCampaignService {
         VehicleUpdateStatusResponse vehicleResponse = mapToUpdateStatusResponse(savedStatus);
         otaWebSocketService.notifyVehicleUpdateStatus(savedStatus.getVehicle().getId(), vehicleResponse);
 
-        // Evaluate campaign stage safety & progress
-        evaluateCampaignStage(savedStatus.getCampaign());
+        // Evaluate campaign stage safety & progress, on the locked instance
+        evaluateCampaignStage(campaign);
     }
 
     @Transactional

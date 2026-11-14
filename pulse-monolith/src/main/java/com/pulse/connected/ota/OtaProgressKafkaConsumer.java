@@ -23,7 +23,10 @@ public class OtaProgressKafkaConsumer {
         this.campaignService = campaignService;
     }
 
-    @KafkaListener(topics = KafkaTopics.OTA_UPDATE_STATUS, groupId = "backend-service-group")
+    // One thread per partition (keyed by vehicle). Safe because RolloutCampaignService locks the
+    // campaign per event.
+    @KafkaListener(id = "ota-progress", topics = KafkaTopics.OTA_UPDATE_STATUS, groupId = "backend-service-group",
+            concurrency = "${pulse.ota.progress-consumer-concurrency:3}")
     public void consumeOtaUpdateProgress(String message) throws JsonProcessingException {
         // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
         OtaUpdateProgressEvent event = objectMapper.readValue(message, OtaUpdateProgressEvent.class);
