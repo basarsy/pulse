@@ -1,5 +1,6 @@
 package com.pulse.connected.common;
 
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.pulse.connected.common.dto.ErrorResponse;
 import com.pulse.connected.common.exception.DuplicateResourceException;
 import com.pulse.connected.common.exception.RateLimitExceededException;
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -88,6 +91,34 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .build();
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    /**
+     * A body that can't be read into the request type (wrong JSON type, number out of range,
+     * malformed JSON) is the client's mistake: 400 naming the field, not a 500.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        List<String> details = List.of();
+        if (ex.getCause() instanceof JsonMappingException mapping) {
+            String field = mapping.getPath().stream()
+                    .map(JsonMappingException.Reference::getFieldName)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining("."));
+            if (!field.isEmpty()) {
+                details = List.of(field + ": invalid value");
+            }
+        }
+        log.debug("Unreadable request body: {}", ex.getMessage());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message("Malformed request body")
+                .details(details)
+                .timestamp(LocalDateTime.now())
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

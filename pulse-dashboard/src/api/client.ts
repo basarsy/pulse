@@ -79,7 +79,9 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, body.message || `Request failed (${response.status})`);
+    // Validation errors carry the reasons in `details`; their `message` is only "Validation failed".
+    const reasons = Array.isArray(body.details) && body.details.length ? body.details.join('; ') : null;
+    throw new ApiError(response.status, reasons || body.message || `Request failed (${response.status})`);
   }
   if (response.status === 204) {
     return undefined as T;

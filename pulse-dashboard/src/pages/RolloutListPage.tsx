@@ -61,11 +61,13 @@ function NewRolloutForm({ onCreated }: { onCreated: (c: Campaign) => void }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const percentages = stages.split(',').map(s => Number(s.trim())).filter(n => n > 0 && n <= 100);
-    if (!percentages.length) {
-      setError('Enter stage percentages, e.g. 5, 25, 100');
+    // Only text that isn't a number is caught here; the server checks range, order and the final 100%.
+    const parts = stages.split(',').map(s => s.trim());
+    if (!parts.every(part => /^\d+$/.test(part))) {
+      setError('Stages must be whole numbers, e.g. 5, 25, 100');
       return;
     }
+    const percentages = parts.map(Number);
     try {
       onCreated(await otaApi.createCampaign(versionId, targetModel, percentages, threshold));
     } catch (err) {
