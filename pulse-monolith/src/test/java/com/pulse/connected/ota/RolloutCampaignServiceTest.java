@@ -202,6 +202,36 @@ class RolloutCampaignServiceTest {
     }
 
     @Test
+    void stageOverHundredPercent_InstructsWholeFleet() {
+        // Stage percentages are not validated; >100% must behave as before (the whole fleet), not
+        // ask for a VIN beyond the end of the fleet and crash.
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1);
+        campaign.getStages().get(1).setPercentage(150);
+        stubFleet(2, 1, vehicle2, vehicle1, vehicle2); // clamped to 2 → cutoff is the 2nd VIN
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+
+        campaignService.executeActiveStage(campaign);
+
+        verify(eventPublisher, times(2)).publishEvent(any(OtaInstructionEvent.class));
+    }
+
+    @Test
+    void fleetShrinksBeforeVinLookup_DoesNotCrash() {
+        // A vehicle deleted between the count and the VIN lookup: nothing to bound by, no crash.
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1); // 100%
+        when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(2L);
+        when(vehicleUpdateStatusRepository.findVinsOfModel(campaign.getTargetModel(), PageRequest.of(1, 1)))
+                .thenReturn(List.of());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+
+        campaignService.executeActiveStage(campaign);
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
     void emptyFleet_StageCompletesWithoutQueryingAVin() {
         when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);

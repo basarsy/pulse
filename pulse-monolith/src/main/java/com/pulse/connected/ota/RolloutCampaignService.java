@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -238,15 +239,23 @@ public class RolloutCampaignService {
         // order so every stage extends the previous one. Only the vehicles to instruct are loaded.
         String model = campaign.getTargetModel();
         long fleetSize = vehicleUpdateStatusRepository.countVehiclesOfModel(model);
-        int targetCount = (int) Math.ceil((fleetSize * activeStage.getPercentage()) / 100.0);
+        // Stage percentages are not validated: a share above 100% means the whole fleet.
+        int targetCount = (int) Math.min(fleetSize, Math.ceil((fleetSize * activeStage.getPercentage()) / 100.0));
         String targetLabel = campaign.getSoftwareVersion().getVersionLabel();
 
         // Within the share: only vehicles not targeted in an earlier stage and not already on the
-        // target version.
+        // target version. If the fleet shrank since the count, there is no cutoff VIN: instruct
+        // nothing now rather than fail the event (later stages count the fleet afresh).
         List<Vehicle> newlyTargeted = List.of();
         if (targetCount > 0) {
-            String lastVin = vehicleUpdateStatusRepository.findVinsOfModel(model, PageRequest.of(targetCount - 1, 1)).get(0);
-            newlyTargeted = vehicleUpdateStatusRepository.findVehiclesToInstruct(campaign.getId(), model, lastVin, targetLabel);
+            Optional<String> lastVin = vehicleUpdateStatusRepository
+                    .findVinsOfModel(model, PageRequest.of(targetCount - 1, 1)).stream().findFirst();
+            if (lastVin.isPresent()) {
+                newlyTargeted = vehicleUpdateStatusRepository.findVehiclesToInstruct(campaign.getId(), model, lastVin.get(), targetLabel);
+            } else {
+                log.warn("Campaign [{}]: fleet of {} shrank below {} while starting stage {}; nothing instructed",
+                        campaign.getId(), model, targetCount, stageIdx + 1);
+            }
         }
 
         log.info("Executing campaign [{}] stage {} ({}%): {} of {} vehicles in scope, {} newly instructed.",
