@@ -18,10 +18,13 @@ import com.pulse.connected.vehicle.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -55,7 +58,6 @@ class CommandServiceTest {
     @org.mockito.Spy
     private io.micrometer.core.instrument.MeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
-    @InjectMocks
     private CommandService commandService;
 
     private User owner;
@@ -64,6 +66,10 @@ class CommandServiceTest {
 
     @BeforeEach
     void setUp() {
+        commandService = new CommandService(commandRepository, vehicleRepository, idempotencyService,
+                eventPublisher, webSocketService, auditLogService, meterRegistry,
+                new CommandTimeoutProperties(Duration.ofMinutes(15), Duration.ofSeconds(60)));
+
         owner = User.builder()
                 .id(UUID.randomUUID())
                 .email("owner@example.com")
@@ -117,6 +123,47 @@ class CommandServiceTest {
         assertThat(response.getType()).isEqualTo(CommandType.LOCK);
         verify(eventPublisher).publishEvent(any(VehicleCommandEvent.class));
         verify(webSocketService).notifyCommandStatusChange(eq(onlineVehicle.getId()), any());
+        assertThat(pendingCommand.getStatus()).isEqualTo(CommandStatus.SENT);
+        assertThat(pendingCommand.getSentAt()).isNotNull();
+    }
+
+    @Test
+    void checkStaleCommands_ExpiresQueuedAfterQueueExpiry() {
+        RemoteCommand queued = pendingCommandFor(offlineVehicle);
+        when(commandRepository.findAllByStatusAndRequestedAtBefore(eq(CommandStatus.PENDING), any()))
+                .thenReturn(List.of(queued));
+        when(commandRepository.save(queued)).thenReturn(queued);
+        ArgumentCaptor<Instant> cutoff = ArgumentCaptor.forClass(Instant.class);
+
+        Instant before = Instant.now();
+        commandService.checkStaleCommands();
+        Instant after = Instant.now();
+
+        verify(commandRepository).findAllByStatusAndRequestedAtBefore(eq(CommandStatus.PENDING), cutoff.capture());
+        assertThat(cutoff.getValue()).isBetween(before.minus(Duration.ofMinutes(15)), after.minus(Duration.ofMinutes(15)));
+        assertThat(queued.getStatus()).isEqualTo(CommandStatus.TIMED_OUT);
+        assertThat(queued.getResultMessage()).isEqualTo("Vehicle did not come online within 15 minutes");
+        assertThat(queued.getResolvedAt()).isNotNull();
+    }
+
+    @Test
+    void checkStaleCommands_TimesOutDispatchedAfterExecutionTimeout() {
+        RemoteCommand acknowledged = commandFor(onlineVehicle, CommandStatus.ACKNOWLEDGED);
+        when(commandRepository.findAllByStatusInAndSentAtBefore(
+                eq(List.of(CommandStatus.SENT, CommandStatus.ACKNOWLEDGED)), any()))
+                .thenReturn(List.of(acknowledged));
+        when(commandRepository.save(acknowledged)).thenReturn(acknowledged);
+        ArgumentCaptor<Instant> cutoff = ArgumentCaptor.forClass(Instant.class);
+
+        Instant before = Instant.now();
+        commandService.checkStaleCommands();
+        Instant after = Instant.now();
+
+        verify(commandRepository).findAllByStatusInAndSentAtBefore(any(), cutoff.capture());
+        assertThat(cutoff.getValue()).isBetween(before.minus(Duration.ofSeconds(60)), after.minus(Duration.ofSeconds(60)));
+        assertThat(acknowledged.getStatus()).isEqualTo(CommandStatus.TIMED_OUT);
+        assertThat(acknowledged.getResultMessage()).isEqualTo("Command execution timed out after 60 seconds");
+        assertThat(meterRegistry.counter("pulse.commands.timed_out").count()).isEqualTo(1.0);
     }
 
     @Test

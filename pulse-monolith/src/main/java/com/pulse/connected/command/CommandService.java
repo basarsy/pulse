@@ -42,6 +42,7 @@ public class CommandService {
     private final CommandWebSocketService webSocketService;
     private final AuditLogService auditLogService;
     private final MeterRegistry meterRegistry;
+    private final CommandTimeoutProperties timeouts;
 
     public CommandService(
             RemoteCommandRepository commandRepository,
@@ -50,7 +51,8 @@ public class CommandService {
             ApplicationEventPublisher eventPublisher,
             CommandWebSocketService webSocketService,
             AuditLogService auditLogService,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            CommandTimeoutProperties timeouts) {
         this.commandRepository = commandRepository;
         this.vehicleRepository = vehicleRepository;
         this.idempotencyService = idempotencyService;
@@ -58,6 +60,7 @@ public class CommandService {
         this.webSocketService = webSocketService;
         this.auditLogService = auditLogService;
         this.meterRegistry = meterRegistry;
+        this.timeouts = timeouts;
     }
 
     @Transactional
@@ -223,24 +226,36 @@ public class CommandService {
     @Scheduled(fixedRate = 30000)
     @Transactional
     public void checkStaleCommands() {
-        Instant cutoff = Instant.now().minusSeconds(60);
-        List<RemoteCommand> staleCommands = commandRepository.findStaleCommands(cutoff);
+        Instant now = Instant.now();
 
-        for (RemoteCommand command : staleCommands) {
-            log.warn("Command [{}] timed out after 60s without execution result.", command.getId());
-            command.setStatus(CommandStatus.TIMED_OUT);
-            command.setResolvedAt(Instant.now());
-            command.setResultMessage("Command execution timed out after 60 seconds");
-            
-            RemoteCommand updated = commandRepository.save(command);
-            meterRegistry.counter("pulse.commands.timed_out").increment();
-            auditLogService.log(command.getIssuedBy().getId(), "COMMAND_TIMED_OUT", "RemoteCommand", command.getId().toString(), null);
-            webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), mapToResponse(updated));
-        }
+        // Queued for a vehicle that never came online: expire rather than fire much later.
+        String queueMessage = "Vehicle did not come online within " + timeouts.queueExpiry().toMinutes() + " minutes";
+        commandRepository.findAllByStatusAndRequestedAtBefore(CommandStatus.PENDING, now.minus(timeouts.queueExpiry()))
+                .forEach(command -> expire(command, queueMessage));
+
+        // Dispatched, but no final result in time. Counted from sending, not from the request, so a
+        // command flushed after a long queue still gets the full execution window.
+        String executionMessage = "Command execution timed out after " + timeouts.executionTimeout().toSeconds() + " seconds";
+        commandRepository.findAllByStatusInAndSentAtBefore(
+                        List.of(CommandStatus.SENT, CommandStatus.ACKNOWLEDGED), now.minus(timeouts.executionTimeout()))
+                .forEach(command -> expire(command, executionMessage));
+    }
+
+    private void expire(RemoteCommand command, String message) {
+        log.warn("Command [{}] in status {} timed out: {}", command.getId(), command.getStatus(), message);
+        command.setStatus(CommandStatus.TIMED_OUT);
+        command.setResolvedAt(Instant.now());
+        command.setResultMessage(message);
+
+        RemoteCommand updated = commandRepository.save(command);
+        meterRegistry.counter("pulse.commands.timed_out").increment();
+        auditLogService.log(command.getIssuedBy().getId(), "COMMAND_TIMED_OUT", "RemoteCommand", command.getId().toString(), null);
+        webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), mapToResponse(updated));
     }
 
     private void dispatchToKafka(RemoteCommand command) {
         command.setStatus(CommandStatus.SENT);
+        command.setSentAt(Instant.now());
         commandRepository.save(command);
 
         VehicleCommandEvent event = VehicleCommandEvent.builder()
@@ -263,6 +278,7 @@ public class CommandService {
                 .type(command.getType())
                 .status(command.getStatus())
                 .requestedAt(command.getRequestedAt())
+                .sentAt(command.getSentAt())
                 .resolvedAt(command.getResolvedAt())
                 .resultMessage(command.getResultMessage())
                 .idempotencyKey(command.getIdempotencyKey())
