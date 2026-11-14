@@ -85,4 +85,23 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(tokens.access()).toBe('access-1');
   });
+
+  it('uses validation details as the error message', async () => {
+    tokens.set('access-1', 'refresh-1');
+    fetchMock.mockResolvedValueOnce(json(400, {
+      message: 'Validation failed',
+      details: ['stagePercentages: the last stage must be 100'],
+    }));
+
+    await expect(request('/rollouts', { method: 'POST' }))
+      .rejects.toMatchObject({ status: 400, message: 'stagePercentages: the last stage must be 100' });
+  });
+
+  it('falls back to message without details', async () => {
+    tokens.set('access-1', 'refresh-1');
+    fetchMock.mockResolvedValueOnce(json(409, { message: 'Cannot start campaign in status: COMPLETED' }));
+
+    await expect(request('/rollouts/x/start', { method: 'POST' }))
+      .rejects.toMatchObject({ status: 409, message: 'Cannot start campaign in status: COMPLETED' });
+  });
 });
