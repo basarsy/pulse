@@ -77,6 +77,43 @@ class CommandLifecycleQueriesTest extends AbstractIntegrationTest {
                 .contains(command.getId());
     }
 
+    // A fixed cutoff far in the past only ever matches rows these tests create: ONLINE vehicles
+    // always have last_seen_at set, because a heartbeat sets both.
+    private static final Instant OLD_CUTOFF = Instant.parse("2000-01-01T00:00:00Z");
+    private static final Instant LONG_AGO = Instant.parse("1999-01-01T00:00:00Z");
+
+    @Test
+    void silentOnlineVehicle_MarkedOffline() {
+        Vehicle vehicle = saveVehicle(ConnectivityState.ONLINE, LONG_AGO);
+
+        int marked = vehicleRepository.markOnlineVehiclesOfflineLastSeenBefore(OLD_CUTOFF);
+
+        assertThat(marked).isEqualTo(1);
+        assertThat(reload(vehicle).getConnectivityState()).isEqualTo(ConnectivityState.OFFLINE);
+    }
+
+    @Test
+    void recentlySeenVehicle_StaysOnline() {
+        Vehicle vehicle = saveVehicle(ConnectivityState.ONLINE, Instant.now());
+
+        vehicleRepository.markOnlineVehiclesOfflineLastSeenBefore(OLD_CUTOFF);
+
+        assertThat(reload(vehicle).getConnectivityState()).isEqualTo(ConnectivityState.ONLINE);
+    }
+
+    @Test
+    void sleepingVehicle_Untouched() {
+        Vehicle vehicle = saveVehicle(ConnectivityState.SLEEPING, LONG_AGO);
+
+        vehicleRepository.markOnlineVehiclesOfflineLastSeenBefore(OLD_CUTOFF);
+
+        assertThat(reload(vehicle).getConnectivityState()).isEqualTo(ConnectivityState.SLEEPING);
+    }
+
+    private Vehicle reload(Vehicle vehicle) {
+        return vehicleRepository.findById(vehicle.getId()).orElseThrow();
+    }
+
     private RemoteCommand saveCommand(CommandStatus status, Instant sentAt) {
         return commandRepository.saveAndFlush(RemoteCommand.builder()
                 .vehicle(saveVehicle(ConnectivityState.OFFLINE, null))
