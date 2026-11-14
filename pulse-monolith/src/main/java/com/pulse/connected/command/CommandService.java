@@ -16,9 +16,11 @@ import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Instant;
 import java.util.List;
@@ -37,53 +39,77 @@ public class CommandService {
 
     private final RemoteCommandRepository commandRepository;
     private final VehicleRepository vehicleRepository;
-    private final CommandIdempotencyService idempotencyService;
+    private final CommandRateLimiter rateLimiter;
     private final ApplicationEventPublisher eventPublisher;
     private final CommandWebSocketService webSocketService;
     private final AuditLogService auditLogService;
     private final MeterRegistry meterRegistry;
     private final CommandTimeoutProperties timeouts;
+    private final TransactionOperations tx;
 
     public CommandService(
             RemoteCommandRepository commandRepository,
             VehicleRepository vehicleRepository,
-            CommandIdempotencyService idempotencyService,
+            CommandRateLimiter rateLimiter,
             ApplicationEventPublisher eventPublisher,
             CommandWebSocketService webSocketService,
             AuditLogService auditLogService,
             MeterRegistry meterRegistry,
-            CommandTimeoutProperties timeouts) {
+            CommandTimeoutProperties timeouts,
+            TransactionOperations tx) {
         this.commandRepository = commandRepository;
         this.vehicleRepository = vehicleRepository;
-        this.idempotencyService = idempotencyService;
+        this.rateLimiter = rateLimiter;
         this.eventPublisher = eventPublisher;
         this.webSocketService = webSocketService;
         this.auditLogService = auditLogService;
         this.meterRegistry = meterRegistry;
         this.timeouts = timeouts;
+        this.tx = tx;
     }
 
-    @Transactional
+    /**
+     * Issues a command, or returns the original one when the same user repeats the same idempotency
+     * key. Idempotency is decided by the database (unique on issued_by, idempotency_key); keys never
+     * expire, and a replay does not count against the rate limit.
+     *
+     * <p>Not one transaction: if a concurrent twin with the same key commits between our lookup and
+     * our insert, the unique constraint rejects the insert and Postgres aborts that transaction, so
+     * the winner is re-read in a fresh one.
+     */
     public CommandResponse issueCommand(UUID vehicleId, IssueCommandRequest request, User currentUser) {
-        if (!idempotencyService.checkRateLimit(currentUser.getId())) {
-            throw new RateLimitExceededException("Command rate limit exceeded. Please wait before issuing more commands.");
-        }
+        // A blank key means "no key"; storing it would make the second blank-key request collide.
+        String idempotencyKey = request.getIdempotencyKey() == null || request.getIdempotencyKey().isBlank()
+                ? null : request.getIdempotencyKey();
 
-        // Idempotency check (keys are scoped to the issuing user)
-        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            Optional<String> existingCommandId =
-                    idempotencyService.getExistingCommandId(currentUser.getId(), request.getIdempotencyKey());
-            if (existingCommandId.isPresent()) {
-                RemoteCommand existing = findCommand(UUID.fromString(existingCommandId.get()));
-                if (!existing.getVehicle().getId().equals(vehicleId)) {
-                    throw new DuplicateResourceException(
-                            "Idempotency key already used for a command on a different vehicle");
-                }
-                log.info("Idempotency hit for key [{}]. Returning existing command [{}]", request.getIdempotencyKey(), existing.getId());
-                return mapToResponse(existing);
+        if (idempotencyKey != null) {
+            Optional<CommandResponse> replayed = findReplay(currentUser.getId(), idempotencyKey, vehicleId, request);
+            if (replayed.isPresent()) {
+                return replayed.get();
             }
         }
 
+        if (!rateLimiter.checkRateLimit(currentUser.getId())) {
+            throw new RateLimitExceededException("Command rate limit exceeded. Please wait before issuing more commands.");
+        }
+
+        try {
+            return tx.execute(status -> createCommand(vehicleId, request, currentUser, idempotencyKey));
+        } catch (DataIntegrityViolationException e) {
+            if (idempotencyKey == null) {
+                throw e;
+            }
+            // Lost the race to a twin: return its command. Nothing found means another constraint failed.
+            return findReplay(currentUser.getId(), idempotencyKey, vehicleId, request).orElseThrow(() -> e);
+        }
+    }
+
+    private Optional<CommandResponse> findReplay(UUID userId, String idempotencyKey, UUID vehicleId, IssueCommandRequest request) {
+        return tx.execute(status -> commandRepository.findByIssuedByIdAndIdempotencyKey(userId, idempotencyKey)
+                .map(existing -> replay(existing, vehicleId, request)));
+    }
+
+    private CommandResponse createCommand(UUID vehicleId, IssueCommandRequest request, User currentUser, String idempotencyKey) {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with ID: " + vehicleId));
 
@@ -92,14 +118,10 @@ public class CommandService {
                 .issuedBy(currentUser)
                 .type(request.getType())
                 .status(CommandStatus.PENDING)
-                .idempotencyKey(request.getIdempotencyKey())
+                .idempotencyKey(idempotencyKey)
                 .build();
 
-        RemoteCommand saved = commandRepository.save(command);
-
-        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            idempotencyService.storeIdempotencyKey(currentUser.getId(), request.getIdempotencyKey(), saved.getId());
-        }
+        RemoteCommand saved = commandRepository.saveAndFlush(command);
 
         meterRegistry.counter("pulse.commands.issued", "type", request.getType().name()).increment();
         auditLogService.log(currentUser.getId(), "COMMAND_ISSUED", "RemoteCommand", saved.getId().toString(), Map.of("type", request.getType().name(), "vehicleId", vehicleId.toString()));
@@ -115,6 +137,21 @@ public class CommandService {
         CommandResponse response = mapToResponse(saved);
         webSocketService.notifyCommandStatusChange(vehicleId, response);
         return response;
+    }
+
+    /**
+     * Same user and key: the same request repeated returns the original command, with no new side
+     * effects. Reusing the key for a different vehicle or command type is a client error.
+     */
+    private CommandResponse replay(RemoteCommand existing, UUID vehicleId, IssueCommandRequest request) {
+        if (!existing.getVehicle().getId().equals(vehicleId)) {
+            throw new DuplicateResourceException("Idempotency key already used for a command on a different vehicle");
+        }
+        if (existing.getType() != request.getType()) {
+            throw new DuplicateResourceException("Idempotency key already used for a " + existing.getType() + " command");
+        }
+        log.info("Idempotency hit for key [{}]. Returning existing command [{}]", existing.getIdempotencyKey(), existing.getId());
+        return mapToResponse(existing);
     }
 
     @Transactional

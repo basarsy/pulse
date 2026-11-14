@@ -17,7 +17,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class CommandIdempotencyServiceTest {
+class CommandRateLimiterTest {
 
     @Mock
     private StringRedisTemplate redisTemplate;
@@ -25,26 +25,12 @@ class CommandIdempotencyServiceTest {
     @Mock
     private ValueOperations<String, String> valueOps;
 
-    private CommandIdempotencyService service;
+    private CommandRateLimiter service;
 
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        service = new CommandIdempotencyService(redisTemplate);
-    }
-
-    @Test
-    void idempotencyKeys_AreScopedPerUser() {
-        UUID alice = UUID.randomUUID();
-        UUID bob = UUID.randomUUID();
-        UUID commandId = UUID.randomUUID();
-
-        service.storeIdempotencyKey(alice, "same-key", commandId);
-        service.getExistingCommandId(bob, "same-key");
-
-        verify(valueOps).set(contains(alice.toString()), eq(commandId.toString()), any(Duration.class));
-        verify(valueOps).get(contains(bob.toString()));
-        verify(valueOps, never()).get(contains(alice.toString()));
+        service = new CommandRateLimiter(redisTemplate);
     }
 
     @Test

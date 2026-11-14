@@ -16,7 +16,8 @@ public interface RemoteCommandRepository extends JpaRepository<RemoteCommand, UU
 
     List<RemoteCommand> findAllByVehicleIdOrderByRequestedAtDesc(UUID vehicleId);
 
-    Optional<RemoteCommand> findByIdempotencyKey(String idempotencyKey);
+    /** Idempotency keys are scoped to the issuing user (unique constraint on issued_by, idempotency_key). */
+    Optional<RemoteCommand> findByIssuedByIdAndIdempotencyKey(UUID userId, String idempotencyKey);
 
     List<RemoteCommand> findAllByVehicleIdAndStatusIn(UUID vehicleId, List<CommandStatus> statuses);
 
