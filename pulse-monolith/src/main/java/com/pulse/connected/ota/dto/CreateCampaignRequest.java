@@ -1,5 +1,7 @@
 package com.pulse.connected.ota.dto;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -14,8 +16,11 @@ public class CreateCampaignRequest {
     @NotBlank(message = "Target model is required")
     private String targetModel;
 
+    @DecimalMin(value = "0", message = "must be between 0 and 100")
+    @DecimalMax(value = "100", message = "must be between 0 and 100")
     private Double failureThresholdPercent = 10.0;
 
+    @ValidStagePercentages
     private List<Integer> stagePercentages;
 
     public CreateCampaignRequest() {}
