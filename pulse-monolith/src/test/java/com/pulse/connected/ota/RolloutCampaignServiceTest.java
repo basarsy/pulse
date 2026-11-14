@@ -2,9 +2,11 @@ package com.pulse.connected.ota;
 
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
+import com.pulse.connected.common.exception.ResourceNotFoundException;
 import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.domain.CampaignStatus;
 import com.pulse.connected.domain.ConnectivityState;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.stubbing.Answer;
@@ -150,11 +153,9 @@ class RolloutCampaignServiceTest {
 
     @Test
     void startCampaign_DispatchesFirstStageToItsShareOfTheFleet() {
-        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
-        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
-                .thenReturn(List.of(vehicle1, vehicle2));
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of());
+        stubFleet(2, 0, vehicle1, vehicle1); // 50% of 2 → share of 1: cutoff is the 1st VIN
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         CampaignResponse response = campaignService.startCampaign(campaign.getId(), admin);
@@ -169,12 +170,11 @@ class RolloutCampaignServiceTest {
 
     @Test
     void laterStage_OnlyInstructsVehiclesNotTargetedInEarlierStages() {
+        // Which vehicles are skipped is decided by the query (pinned in RolloutQueriesTest); here
+        // the stage asks for the right share and instructs exactly what the query returns.
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         campaign.setCurrentStageIndex(1); // 100%
-        VehicleUpdateStatus stage1Update = update(vehicle1, 0, UpdateStatus.INSTALLED);
-        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
-                .thenReturn(List.of(vehicle1, vehicle2));
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of(stage1Update));
+        stubFleet(2, 1, vehicle2, vehicle2);
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         campaignService.executeActiveStage(campaign);
@@ -182,7 +182,6 @@ class RolloutCampaignServiceTest {
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
         assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
-        assertThat(stage1Update.getStatus()).isEqualTo(UpdateStatus.INSTALLED);
     }
 
     @Test
@@ -190,9 +189,7 @@ class RolloutCampaignServiceTest {
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         campaign.setCurrentStageIndex(1); // 100%
         vehicle1.setCurrentSoftwareVersion(version.getVersionLabel());
-        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
-                .thenReturn(List.of(vehicle1, vehicle2));
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of());
+        stubFleet(2, 1, vehicle2, vehicle2);
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         campaignService.executeActiveStage(campaign);
@@ -200,6 +197,65 @@ class RolloutCampaignServiceTest {
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
         assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        verify(vehicleUpdateStatusRepository).findVehiclesToInstruct(
+                campaign.getId(), campaign.getTargetModel(), vehicle2.getVin(), version.getVersionLabel());
+    }
+
+    @Test
+    void stageOverHundredPercent_InstructsWholeFleet() {
+        // Stage percentages are not validated; >100% must behave as before (the whole fleet), not
+        // ask for a VIN beyond the end of the fleet and crash.
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1);
+        campaign.getStages().get(1).setPercentage(150);
+        stubFleet(2, 1, vehicle2, vehicle1, vehicle2); // clamped to 2 → cutoff is the 2nd VIN
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+
+        campaignService.executeActiveStage(campaign);
+
+        verify(eventPublisher, times(2)).publishEvent(any(OtaInstructionEvent.class));
+    }
+
+    @Test
+    void fleetShrinksBeforeVinLookup_DoesNotCrash() {
+        // A vehicle deleted between the count and the VIN lookup: nothing to bound by, no crash.
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        campaign.setCurrentStageIndex(1); // 100%
+        when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(2L);
+        when(vehicleUpdateStatusRepository.findVinsOfModel(campaign.getTargetModel(), PageRequest.of(1, 1)))
+                .thenReturn(List.of());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+
+        campaignService.executeActiveStage(campaign);
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void emptyFleet_StageCompletesWithoutQueryingAVin() {
+        when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
+        when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(0L);
+        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+
+        campaignService.startCampaign(campaign.getId(), admin);
+
+        assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.COMPLETED);
+        verify(vehicleUpdateStatusRepository, never()).findVinsOfModel(any(), any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /**
+     * Fleet of {@code size}; the stage's cutoff is the VIN at {@code cutoffPosition} (0-based),
+     * which is {@code cutoffVehicle}'s; the query returns {@code toInstruct}.
+     */
+    private void stubFleet(long size, int cutoffPosition, Vehicle cutoffVehicle, Vehicle... toInstruct) {
+        when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(size);
+        when(vehicleUpdateStatusRepository.findVinsOfModel(campaign.getTargetModel(), PageRequest.of(cutoffPosition, 1)))
+                .thenReturn(List.of(cutoffVehicle.getVin()));
+        when(vehicleUpdateStatusRepository.findVehiclesToInstruct(
+                campaign.getId(), campaign.getTargetModel(), cutoffVehicle.getVin(), version.getVersionLabel()))
+                .thenReturn(List.of(toInstruct));
     }
 
     @Test
@@ -217,9 +273,13 @@ class RolloutCampaignServiceTest {
                 update(vehicle2, 0, UpdateStatus.INSTALLED),
                 update(vehicle3, 1, UpdateStatus.DOWNLOADING),
                 failing);
-        when(vehicleUpdateStatusRepository.findById(failing.getId())).thenReturn(Optional.of(failing));
+        stubLockedLookup(failing);
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(all);
+        // The state after this event: stage 0 two INSTALLED, stage 1 one DOWNLOADING and one FAILED.
+        when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId())).thenReturn(List.of(
+                new StageStatusCount(0, UpdateStatus.INSTALLED, 2),
+                new StageStatusCount(1, UpdateStatus.DOWNLOADING, 1),
+                new StageStatusCount(1, UpdateStatus.FAILED, 1)));
         when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
 
         campaignService.handleVehicleUpdateProgress(progress(failing, UpdateStatus.FAILED));
@@ -228,9 +288,26 @@ class RolloutCampaignServiceTest {
     }
 
     @Test
+    void progressEvent_DoesNotLoadAllUpdateRows() {
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        VehicleUpdateStatus installing = update(vehicle1, 0, UpdateStatus.INSTALLING);
+        stubLockedLookup(installing);
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId())).thenReturn(List.of(
+                new StageStatusCount(0, UpdateStatus.INSTALLED, 1),
+                new StageStatusCount(0, UpdateStatus.INSTALLING, 1)));
+
+        campaignService.handleVehicleUpdateProgress(progress(installing, UpdateStatus.INSTALLED));
+
+        // Per-event cost must not grow with the fleet: no loading of every update of the campaign.
+        verify(vehicleUpdateStatusRepository, never()).findAllByCampaignId(any());
+        assertThat(campaign.getCurrentStageIndex()).isZero(); // one of two still installing
+    }
+
+    @Test
     void staleProgressEvent_DoesNotMoveStatusBackwards() {
         VehicleUpdateStatus installed = update(vehicle1, 0, UpdateStatus.INSTALLED);
-        when(vehicleUpdateStatusRepository.findById(installed.getId())).thenReturn(Optional.of(installed));
+        stubLockedLookup(installed);
 
         campaignService.handleVehicleUpdateProgress(progress(installed, UpdateStatus.DOWNLOADING));
 
@@ -242,7 +319,7 @@ class RolloutCampaignServiceTest {
     void failedUpdate_CanStillBeReportedAsRolledBack() {
         VehicleUpdateStatus failed = update(vehicle1, 0, UpdateStatus.FAILED);
         campaign.setStatus(CampaignStatus.PAUSED);
-        when(vehicleUpdateStatusRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        stubLockedLookup(failed);
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         campaignService.handleVehicleUpdateProgress(progress(failed, UpdateStatus.ROLLED_BACK));
@@ -293,9 +370,10 @@ class RolloutCampaignServiceTest {
 
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
 
-        when(vehicleUpdateStatusRepository.findById(updateStatus.getId())).thenReturn(Optional.of(updateStatus));
+        stubLockedLookup(updateStatus);
         when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of(updateStatus));
+        when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId()))
+                .thenReturn(List.of(new StageStatusCount(0, UpdateStatus.FAILED, 1)));
         when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
 
         OtaUpdateProgressEvent failedEvent = OtaUpdateProgressEvent.builder()
@@ -322,7 +400,7 @@ class RolloutCampaignServiceTest {
                 .roles(Set.of(Role.SYSTEM_ADMIN))
                 .build();
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
-        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(campaign)).thenReturn(campaign);
 
         campaignService.pauseCampaign(campaign.getId(), otherAdmin);
@@ -333,10 +411,59 @@ class RolloutCampaignServiceTest {
     @Test
     void abortCampaign_AlreadyCompleted_IsRejected() {
         campaign.setStatus(CampaignStatus.COMPLETED);
-        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
 
         assertThatThrownBy(() -> campaignService.abortCampaign(campaign.getId(), admin))
                 .isInstanceOf(IllegalStateException.class);
         verify(campaignRepository, never()).save(any());
+    }
+
+    @Test
+    void progressEvent_LocksCampaignBeforeReadingTheUpdate() {
+        // The update row must be read after the lock: only then does it (and the stage summary)
+        // reflect every earlier event for this campaign.
+        VehicleUpdateStatus downloading = update(vehicle1, 0, UpdateStatus.DOWNLOADING);
+        stubLockedLookup(downloading);
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+
+        campaignService.handleVehicleUpdateProgress(progress(downloading, UpdateStatus.INSTALLING));
+
+        InOrder order = inOrder(vehicleUpdateStatusRepository, campaignRepository);
+        order.verify(vehicleUpdateStatusRepository).findCampaignIdById(downloading.getId());
+        order.verify(campaignRepository).findByIdForUpdate(campaign.getId());
+        order.verify(vehicleUpdateStatusRepository).findById(downloading.getId());
+    }
+
+    @Test
+    void progressEvent_UnknownUpdate_NotFound() {
+        UUID unknown = UUID.randomUUID();
+        when(vehicleUpdateStatusRepository.findCampaignIdById(unknown)).thenReturn(Optional.empty());
+        OtaUpdateProgressEvent event = OtaUpdateProgressEvent.builder()
+                .updateStatusId(unknown).vehicleId(vehicle1.getId()).status(UpdateStatus.INSTALLED).build();
+
+        assertThatThrownBy(() -> campaignService.handleVehicleUpdateProgress(event))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(campaignRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void operatorActions_UseTheLockedLookup() {
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(campaign)).thenReturn(campaign);
+        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+
+        campaignService.pauseCampaign(campaign.getId(), admin);
+        campaignService.abortCampaign(campaign.getId(), admin);
+
+        verify(campaignRepository, times(2)).findByIdForUpdate(campaign.getId());
+        verify(campaignRepository, never()).findById(any());
+    }
+
+    /** A progress event's lookups: update → campaign id, lock the campaign, then the update itself. */
+    private void stubLockedLookup(VehicleUpdateStatus update) {
+        when(vehicleUpdateStatusRepository.findCampaignIdById(update.getId())).thenReturn(Optional.of(campaign.getId()));
+        when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(vehicleUpdateStatusRepository.findById(update.getId())).thenReturn(Optional.of(update));
     }
 }

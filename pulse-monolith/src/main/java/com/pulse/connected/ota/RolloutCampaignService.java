@@ -14,13 +14,14 @@ import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -103,7 +104,7 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse startCampaign(UUID campaignId, User actor) {
-        RolloutCampaign campaign = campaignRepository.findById(campaignId)
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
         if (campaign.getStatus() != CampaignStatus.DRAFT && campaign.getStatus() != CampaignStatus.PAUSED) {
@@ -122,7 +123,7 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse pauseCampaign(UUID campaignId, User actor) {
-        RolloutCampaign campaign = campaignRepository.findById(campaignId)
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
         if (campaign.getStatus() != CampaignStatus.IN_PROGRESS) {
@@ -147,7 +148,7 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse abortCampaign(UUID campaignId, User actor) {
-        RolloutCampaign campaign = campaignRepository.findById(campaignId)
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
 
         if (campaign.getStatus() == CampaignStatus.COMPLETED || campaign.getStatus() == CampaignStatus.ABORTED) {
@@ -167,6 +168,14 @@ public class RolloutCampaignService {
 
     @Transactional
     public void handleVehicleUpdateProgress(OtaUpdateProgressEvent event) {
+        // Progress events are consumed in parallel. Lock the campaign first, and only then read the
+        // update: events for one campaign are applied one after another, each seeing the previous
+        // one's committed changes, so the last one of a stage reliably sees the stage finished
+        // (no stall) and only it advances (no double start).
+        UUID campaignId = vehicleUpdateStatusRepository.findCampaignIdById(event.getUpdateStatusId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.getUpdateStatusId()));
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
         VehicleUpdateStatus updateStatus = vehicleUpdateStatusRepository.findById(event.getUpdateStatusId())
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.getUpdateStatusId()));
 
@@ -203,8 +212,8 @@ public class RolloutCampaignService {
         VehicleUpdateStatusResponse vehicleResponse = mapToUpdateStatusResponse(savedStatus);
         otaWebSocketService.notifyVehicleUpdateStatus(savedStatus.getVehicle().getId(), vehicleResponse);
 
-        // Evaluate campaign stage safety & progress
-        evaluateCampaignStage(savedStatus.getCampaign());
+        // Evaluate campaign stage safety & progress, on the locked instance
+        evaluateCampaignStage(campaign);
     }
 
     @Transactional
@@ -227,24 +236,30 @@ public class RolloutCampaignService {
         }
 
         // Stage percentages are cumulative shares of the model's fleet, taken in a stable (VIN)
-        // order so every stage extends the previous one.
-        List<Vehicle> fleet = vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel());
-        int targetCount = (int) Math.ceil((fleet.size() * activeStage.getPercentage()) / 100.0);
-
-        Set<UUID> alreadyTargeted = vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId()).stream()
-                .map(update -> update.getVehicle().getId())
-                .collect(Collectors.toSet());
+        // order so every stage extends the previous one. Only the vehicles to instruct are loaded.
+        String model = campaign.getTargetModel();
+        long fleetSize = vehicleUpdateStatusRepository.countVehiclesOfModel(model);
+        // Stage percentages are not validated: a share above 100% means the whole fleet.
+        int targetCount = (int) Math.min(fleetSize, Math.ceil((fleetSize * activeStage.getPercentage()) / 100.0));
         String targetLabel = campaign.getSoftwareVersion().getVersionLabel();
 
-        // Only vehicles not targeted in an earlier stage and not already on the target version.
-        List<Vehicle> newlyTargeted = fleet.stream()
-                .limit(targetCount)
-                .filter(v -> !alreadyTargeted.contains(v.getId()))
-                .filter(v -> !targetLabel.equals(v.getCurrentSoftwareVersion()))
-                .toList();
+        // Within the share: only vehicles not targeted in an earlier stage and not already on the
+        // target version. If the fleet shrank since the count, there is no cutoff VIN: instruct
+        // nothing now rather than fail the event (later stages count the fleet afresh).
+        List<Vehicle> newlyTargeted = List.of();
+        if (targetCount > 0) {
+            Optional<String> lastVin = vehicleUpdateStatusRepository
+                    .findVinsOfModel(model, PageRequest.of(targetCount - 1, 1)).stream().findFirst();
+            if (lastVin.isPresent()) {
+                newlyTargeted = vehicleUpdateStatusRepository.findVehiclesToInstruct(campaign.getId(), model, lastVin.get(), targetLabel);
+            } else {
+                log.warn("Campaign [{}]: fleet of {} shrank below {} while starting stage {}; nothing instructed",
+                        campaign.getId(), model, targetCount, stageIdx + 1);
+            }
+        }
 
         log.info("Executing campaign [{}] stage {} ({}%): {} of {} vehicles in scope, {} newly instructed.",
-                campaign.getId(), stageIdx + 1, activeStage.getPercentage(), targetCount, fleet.size(), newlyTargeted.size());
+                campaign.getId(), stageIdx + 1, activeStage.getPercentage(), targetCount, fleetSize, newlyTargeted.size());
 
         for (Vehicle vehicle : newlyTargeted) {
             VehicleUpdateStatus savedStatus = vehicleUpdateStatusRepository.save(VehicleUpdateStatus.builder()
@@ -290,16 +305,18 @@ public class RolloutCampaignService {
         if (campaign.getStatus() != CampaignStatus.IN_PROGRESS) {
             return;
         }
-        List<VehicleUpdateStatus> stageUpdates = updatesInCurrentStage(campaign);
-        if (stageUpdates.isEmpty()) {
+        int stageIdx = campaign.getCurrentStageIndex();
+        CampaignProgress progress = progressOf(campaign);
+        long stageTotal = progress.stageTotal(stageIdx);
+        if (stageTotal == 0) {
             return;
         }
 
-        long failedCount = stageUpdates.stream().filter(VehicleUpdateStatus::isFailed).count();
-        double failureRate = failedCount * 100.0 / stageUpdates.size();
+        long failedCount = progress.stageFailed(stageIdx);
+        double failureRate = failedCount * 100.0 / stageTotal;
 
         log.info("Campaign [{}] stage {}: {}/{} failed ({}% vs threshold {}%)",
-                campaign.getId(), campaign.getCurrentStageIndex() + 1, failedCount, stageUpdates.size(),
+                campaign.getId(), stageIdx + 1, failedCount, stageTotal,
                 String.format("%.2f", failureRate), campaign.getFailureThresholdPercent());
 
         if (failureRate > campaign.getFailureThresholdPercent()) {
@@ -315,18 +332,19 @@ public class RolloutCampaignService {
         advanceIfStageFinished(campaign);
     }
 
-    private List<VehicleUpdateStatus> updatesInCurrentStage(RolloutCampaign campaign) {
-        int stageIdx = campaign.getCurrentStageIndex();
-        return vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId()).stream()
-                .filter(update -> update.getStageIndex() == stageIdx)
-                .toList();
+    /** One grouped query; the result answers stage evaluation and the response alike. */
+    private CampaignProgress progressOf(RolloutCampaign campaign) {
+        return CampaignProgress.of(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId()));
     }
 
     private void advanceIfStageFinished(RolloutCampaign campaign) {
         if (campaign.getStatus() != CampaignStatus.IN_PROGRESS) {
             return;
         }
-        boolean stageFinished = updatesInCurrentStage(campaign).stream().allMatch(VehicleUpdateStatus::isFinished);
+        // A stage without updates (everything in scope already targeted or up to date) is finished.
+        int stageIdx = campaign.getCurrentStageIndex();
+        CampaignProgress progress = progressOf(campaign);
+        boolean stageFinished = progress.stageFinished(stageIdx) == progress.stageTotal(stageIdx);
         if (stageFinished) {
             RolloutStage currentStage = campaign.getStages().get(campaign.getCurrentStageIndex());
             currentStage.setStatus(RolloutStageStatus.COMPLETED);
@@ -380,10 +398,10 @@ public class RolloutCampaignService {
     }
 
     public CampaignResponse mapToCampaignResponse(RolloutCampaign campaign) {
-        long installed = vehicleUpdateStatusRepository.countByCampaignIdAndStatus(campaign.getId(), UpdateStatus.INSTALLED);
-        long failed = vehicleUpdateStatusRepository.countByCampaignIdAndStatus(campaign.getId(), UpdateStatus.FAILED)
-                + vehicleUpdateStatusRepository.countByCampaignIdAndStatus(campaign.getId(), UpdateStatus.ROLLED_BACK);
-        long total = vehicleUpdateStatusRepository.countTotalByCampaignId(campaign.getId());
+        CampaignProgress progress = progressOf(campaign);
+        long installed = progress.installed();
+        long failed = progress.failed();
+        long total = progress.total();
 
         List<RolloutStageResponse> stageResponses = campaign.getStages().stream()
                 .map(s -> RolloutStageResponse.builder()
