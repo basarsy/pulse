@@ -14,13 +14,13 @@ import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -227,24 +227,22 @@ public class RolloutCampaignService {
         }
 
         // Stage percentages are cumulative shares of the model's fleet, taken in a stable (VIN)
-        // order so every stage extends the previous one.
-        List<Vehicle> fleet = vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel());
-        int targetCount = (int) Math.ceil((fleet.size() * activeStage.getPercentage()) / 100.0);
-
-        Set<UUID> alreadyTargeted = vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId()).stream()
-                .map(update -> update.getVehicle().getId())
-                .collect(Collectors.toSet());
+        // order so every stage extends the previous one. Only the vehicles to instruct are loaded.
+        String model = campaign.getTargetModel();
+        long fleetSize = vehicleUpdateStatusRepository.countVehiclesOfModel(model);
+        int targetCount = (int) Math.ceil((fleetSize * activeStage.getPercentage()) / 100.0);
         String targetLabel = campaign.getSoftwareVersion().getVersionLabel();
 
-        // Only vehicles not targeted in an earlier stage and not already on the target version.
-        List<Vehicle> newlyTargeted = fleet.stream()
-                .limit(targetCount)
-                .filter(v -> !alreadyTargeted.contains(v.getId()))
-                .filter(v -> !targetLabel.equals(v.getCurrentSoftwareVersion()))
-                .toList();
+        // Within the share: only vehicles not targeted in an earlier stage and not already on the
+        // target version.
+        List<Vehicle> newlyTargeted = List.of();
+        if (targetCount > 0) {
+            String lastVin = vehicleUpdateStatusRepository.findVinsOfModel(model, PageRequest.of(targetCount - 1, 1)).get(0);
+            newlyTargeted = vehicleUpdateStatusRepository.findVehiclesToInstruct(campaign.getId(), model, lastVin, targetLabel);
+        }
 
         log.info("Executing campaign [{}] stage {} ({}%): {} of {} vehicles in scope, {} newly instructed.",
-                campaign.getId(), stageIdx + 1, activeStage.getPercentage(), targetCount, fleet.size(), newlyTargeted.size());
+                campaign.getId(), stageIdx + 1, activeStage.getPercentage(), targetCount, fleetSize, newlyTargeted.size());
 
         for (Vehicle vehicle : newlyTargeted) {
             VehicleUpdateStatus savedStatus = vehicleUpdateStatusRepository.save(VehicleUpdateStatus.builder()

@@ -13,6 +13,7 @@ import com.pulse.connected.vehicle.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -78,6 +79,46 @@ class RolloutQueriesTest extends AbstractIntegrationTest {
         assertThat(progress.stageFailed(0)).isEqualTo(1);
         assertThat(progress.stageTotal(1)).isEqualTo(1);
         assertThat(progress.installed()).isEqualTo(2);
+    }
+
+    @Test
+    void vehiclesToInstruct_FirstNByVin() {
+        RolloutCampaign campaign = saveCampaign();
+        Vehicle a = saveVehicle("A");
+        Vehicle b = saveVehicle("B");
+        saveVehicle("C");
+        saveVehicle("D");
+
+        // Stage share of 2: the cutoff is the 2nd VIN in order.
+        String lastVin = updateRepository.findVinsOfModel(model, PageRequest.of(1, 1)).get(0);
+        assertThat(lastVin).isEqualTo(b.getVin());
+
+        assertThat(updateRepository.findVehiclesToInstruct(campaign.getId(), model, lastVin, version.getVersionLabel()))
+                .extracting(Vehicle::getId)
+                .containsExactly(a.getId(), b.getId());
+    }
+
+    @Test
+    void vehiclesToInstruct_SkipsAlreadyTargetedAndOnTargetVersion() {
+        RolloutCampaign campaign = saveCampaign();
+        Vehicle a = saveVehicle("A");
+        saveVehicle("B", model, version.getVersionLabel()); // already on the target version
+        Vehicle c = saveVehicle("C");
+        Vehicle d = saveVehicle("D");
+        saveUpdate(campaign, a, 0, UpdateStatus.INSTALLED); // targeted in an earlier stage
+
+        assertThat(updateRepository.findVehiclesToInstruct(campaign.getId(), model, d.getVin(), version.getVersionLabel()))
+                .extracting(Vehicle::getId)
+                .containsExactly(c.getId(), d.getId());
+    }
+
+    @Test
+    void vehiclesOfModel_MatchCaseInsensitively() {
+        saveVehicle("A", model.toLowerCase(), "1.0.0");
+        saveVehicle("B", model.toLowerCase(), "1.0.0");
+
+        assertThat(updateRepository.countVehiclesOfModel(model.toUpperCase())).isEqualTo(2);
+        assertThat(updateRepository.findVinsOfModel(model.toUpperCase(), PageRequest.of(0, 10))).hasSize(2);
     }
 
     RolloutCampaign saveCampaign() {

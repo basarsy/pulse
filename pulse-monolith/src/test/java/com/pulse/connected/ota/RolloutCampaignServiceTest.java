@@ -5,6 +5,7 @@ import com.pulse.connected.auth.User;
 import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.domain.CampaignStatus;
 import com.pulse.connected.domain.ConnectivityState;
@@ -152,9 +153,7 @@ class RolloutCampaignServiceTest {
     void startCampaign_DispatchesFirstStageToItsShareOfTheFleet() {
         when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
-        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
-                .thenReturn(List.of(vehicle1, vehicle2));
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of());
+        stubFleet(2, 0, vehicle1, vehicle1); // 50% of 2 → share of 1: cutoff is the 1st VIN
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         CampaignResponse response = campaignService.startCampaign(campaign.getId(), admin);
@@ -169,12 +168,11 @@ class RolloutCampaignServiceTest {
 
     @Test
     void laterStage_OnlyInstructsVehiclesNotTargetedInEarlierStages() {
+        // Which vehicles are skipped is decided by the query (pinned in RolloutQueriesTest); here
+        // the stage asks for the right share and instructs exactly what the query returns.
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         campaign.setCurrentStageIndex(1); // 100%
-        VehicleUpdateStatus stage1Update = update(vehicle1, 0, UpdateStatus.INSTALLED);
-        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
-                .thenReturn(List.of(vehicle1, vehicle2));
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of(stage1Update));
+        stubFleet(2, 1, vehicle2, vehicle2);
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         campaignService.executeActiveStage(campaign);
@@ -182,7 +180,6 @@ class RolloutCampaignServiceTest {
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
         assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
-        assertThat(stage1Update.getStatus()).isEqualTo(UpdateStatus.INSTALLED);
     }
 
     @Test
@@ -190,9 +187,7 @@ class RolloutCampaignServiceTest {
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         campaign.setCurrentStageIndex(1); // 100%
         vehicle1.setCurrentSoftwareVersion(version.getVersionLabel());
-        when(vehicleRepository.findAllByModelIgnoreCaseOrderByVinAsc(campaign.getTargetModel()))
-                .thenReturn(List.of(vehicle1, vehicle2));
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of());
+        stubFleet(2, 1, vehicle2, vehicle2);
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
 
         campaignService.executeActiveStage(campaign);
@@ -200,6 +195,35 @@ class RolloutCampaignServiceTest {
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
         assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        verify(vehicleUpdateStatusRepository).findVehiclesToInstruct(
+                campaign.getId(), campaign.getTargetModel(), vehicle2.getVin(), version.getVersionLabel());
+    }
+
+    @Test
+    void emptyFleet_StageCompletesWithoutQueryingAVin() {
+        when(campaignRepository.findById(campaign.getId())).thenReturn(Optional.of(campaign));
+        when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
+        when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(0L);
+        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+
+        campaignService.startCampaign(campaign.getId(), admin);
+
+        assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.COMPLETED);
+        verify(vehicleUpdateStatusRepository, never()).findVinsOfModel(any(), any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /**
+     * Fleet of {@code size}; the stage's cutoff is the VIN at {@code cutoffPosition} (0-based),
+     * which is {@code cutoffVehicle}'s; the query returns {@code toInstruct}.
+     */
+    private void stubFleet(long size, int cutoffPosition, Vehicle cutoffVehicle, Vehicle... toInstruct) {
+        when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(size);
+        when(vehicleUpdateStatusRepository.findVinsOfModel(campaign.getTargetModel(), PageRequest.of(cutoffPosition, 1)))
+                .thenReturn(List.of(cutoffVehicle.getVin()));
+        when(vehicleUpdateStatusRepository.findVehiclesToInstruct(
+                campaign.getId(), campaign.getTargetModel(), cutoffVehicle.getVin(), version.getVersionLabel()))
+                .thenReturn(List.of(toInstruct));
     }
 
     @Test
