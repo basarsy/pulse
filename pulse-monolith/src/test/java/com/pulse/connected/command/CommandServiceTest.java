@@ -282,6 +282,31 @@ class CommandServiceTest {
         assertThat(command.getStatus()).isEqualTo(finalStatus);
         verify(commandRepository, never()).save(any());
         verifyNoInteractions(webSocketService);
+        // The vehicle may really have executed it (e.g. unlocked after a cancel): keep a record.
+        verify(auditLogService).log(eq(owner.getId()), eq("COMMAND_LATE_RESULT"), eq("RemoteCommand"),
+                eq(command.getId().toString()),
+                eq(java.util.Map.of("reportedStatus", "COMPLETED", "currentStatus", finalStatus.name())));
+        assertThat(meterRegistry.counter("pulse.commands.late_results").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void dispatchPendingCommands_ExpiresInsteadOfSendingCommandPastQueueExpiry() {
+        RemoteCommand stale = pendingCommandFor(onlineVehicle);
+        stale.setRequestedAt(Instant.now().minus(Duration.ofMinutes(16)));
+        RemoteCommand fresh = pendingCommandFor(onlineVehicle);
+        fresh.setRequestedAt(Instant.now().minus(Duration.ofMinutes(1)));
+        when(commandRepository.findAllByVehicleIdAndStatusIn(onlineVehicle.getId(), List.of(CommandStatus.PENDING)))
+                .thenReturn(List.of(stale, fresh));
+        when(commandRepository.save(any(RemoteCommand.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        commandService.dispatchPendingCommandsForVehicle(onlineVehicle.getId());
+
+        assertThat(stale.getStatus()).isEqualTo(CommandStatus.TIMED_OUT);
+        assertThat(stale.getResultMessage()).isEqualTo("Vehicle did not come online within 15 minutes");
+        assertThat(fresh.getStatus()).isEqualTo(CommandStatus.SENT);
+        ArgumentCaptor<VehicleCommandEvent> sent = ArgumentCaptor.forClass(VehicleCommandEvent.class);
+        verify(eventPublisher).publishEvent(sent.capture());
+        assertThat(sent.getValue().getCommandId()).isEqualTo(fresh.getId());
     }
 
     @Test

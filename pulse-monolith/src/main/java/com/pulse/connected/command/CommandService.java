@@ -133,9 +133,14 @@ public class CommandService {
         }
         if (!CommandStatusTransitions.isAllowed(command.getStatus(), resultStatus)) {
             // Late or redelivered result (e.g. after a timeout or cancellation). Not an error, so
-            // it is not retried or dead-lettered.
-            log.info("Ignoring result for command [{}]: {} -> {} is not allowed",
+            // it is not retried or dead-lettered. The status stays final, but the vehicle may have
+            // really executed the command (an UNLOCK after a cancel), so it is audited.
+            log.warn("Ignoring result for command [{}]: {} -> {} is not allowed",
                     commandId, command.getStatus(), resultStatus);
+            meterRegistry.counter("pulse.commands.late_results").increment();
+            auditLogService.log(command.getIssuedBy().getId(), "COMMAND_LATE_RESULT", "RemoteCommand",
+                    commandId.toString(),
+                    Map.of("reportedStatus", resultStatus.name(), "currentStatus", command.getStatus().name()));
             return;
         }
 
@@ -165,7 +170,13 @@ public class CommandService {
         List<RemoteCommand> pendingCommands = commandRepository.findAllByVehicleIdAndStatusIn(
                 vehicleId, List.of(CommandStatus.PENDING));
 
+        Instant queueCutoff = Instant.now().minus(timeouts.queueExpiry());
         for (RemoteCommand command : pendingCommands) {
+            if (command.getRequestedAt() != null && command.getRequestedAt().isBefore(queueCutoff)) {
+                // Expired but not yet swept: must never fire late.
+                expire(command, queueExpiredMessage());
+                continue;
+            }
             log.info("Flushing pending command [{}] for reconnected vehicle [{}]", command.getId(), vehicleId);
             dispatchToKafka(command);
             CommandResponse response = mapToResponse(command);
@@ -229,7 +240,7 @@ public class CommandService {
         Instant now = Instant.now();
 
         // Queued for a vehicle that never came online: expire rather than fire much later.
-        String queueMessage = "Vehicle did not come online within " + timeouts.queueExpiry().toMinutes() + " minutes";
+        String queueMessage = queueExpiredMessage();
         commandRepository.findAllByStatusAndRequestedAtBefore(CommandStatus.PENDING, now.minus(timeouts.queueExpiry()))
                 .forEach(command -> expire(command, queueMessage));
 
@@ -239,6 +250,10 @@ public class CommandService {
         commandRepository.findAllByStatusInAndSentAtBefore(
                         List.of(CommandStatus.SENT, CommandStatus.ACKNOWLEDGED), now.minus(timeouts.executionTimeout()))
                 .forEach(command -> expire(command, executionMessage));
+    }
+
+    private String queueExpiredMessage() {
+        return "Vehicle did not come online within " + timeouts.queueExpiry().toMinutes() + " minutes";
     }
 
     private void expire(RemoteCommand command, String message) {
