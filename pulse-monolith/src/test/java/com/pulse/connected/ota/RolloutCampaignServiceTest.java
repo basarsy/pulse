@@ -219,12 +219,33 @@ class RolloutCampaignServiceTest {
                 failing);
         when(vehicleUpdateStatusRepository.findById(failing.getId())).thenReturn(Optional.of(failing));
         when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(all);
+        // The state after this event: stage 0 two INSTALLED, stage 1 one DOWNLOADING and one FAILED.
+        when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId())).thenReturn(List.of(
+                new StageStatusCount(0, UpdateStatus.INSTALLED, 2),
+                new StageStatusCount(1, UpdateStatus.DOWNLOADING, 1),
+                new StageStatusCount(1, UpdateStatus.FAILED, 1)));
         when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
 
         campaignService.handleVehicleUpdateProgress(progress(failing, UpdateStatus.FAILED));
 
         assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.PAUSED);
+    }
+
+    @Test
+    void progressEvent_DoesNotLoadAllUpdateRows() {
+        campaign.setStatus(CampaignStatus.IN_PROGRESS);
+        VehicleUpdateStatus installing = update(vehicle1, 0, UpdateStatus.INSTALLING);
+        when(vehicleUpdateStatusRepository.findById(installing.getId())).thenReturn(Optional.of(installing));
+        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId())).thenReturn(List.of(
+                new StageStatusCount(0, UpdateStatus.INSTALLED, 1),
+                new StageStatusCount(0, UpdateStatus.INSTALLING, 1)));
+
+        campaignService.handleVehicleUpdateProgress(progress(installing, UpdateStatus.INSTALLED));
+
+        // Per-event cost must not grow with the fleet: no loading of every update of the campaign.
+        verify(vehicleUpdateStatusRepository, never()).findAllByCampaignId(any());
+        assertThat(campaign.getCurrentStageIndex()).isZero(); // one of two still installing
     }
 
     @Test
@@ -295,7 +316,8 @@ class RolloutCampaignServiceTest {
 
         when(vehicleUpdateStatusRepository.findById(updateStatus.getId())).thenReturn(Optional.of(updateStatus));
         when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
-        when(vehicleUpdateStatusRepository.findAllByCampaignId(campaign.getId())).thenReturn(List.of(updateStatus));
+        when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId()))
+                .thenReturn(List.of(new StageStatusCount(0, UpdateStatus.FAILED, 1)));
         when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
 
         OtaUpdateProgressEvent failedEvent = OtaUpdateProgressEvent.builder()

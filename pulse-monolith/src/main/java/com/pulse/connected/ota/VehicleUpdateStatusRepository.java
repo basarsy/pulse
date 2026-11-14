@@ -20,9 +20,17 @@ public interface VehicleUpdateStatusRepository extends JpaRepository<VehicleUpda
 
     Optional<VehicleUpdateStatus> findByVehicleIdAndCampaignId(UUID vehicleId, UUID campaignId);
 
-    @Query("SELECT COUNT(u) FROM VehicleUpdateStatus u WHERE u.campaign.id = :campaignId AND u.status = :status")
-    long countByCampaignIdAndStatus(@Param("campaignId") UUID campaignId, @Param("status") UpdateStatus status);
 
-    @Query("SELECT COUNT(u) FROM VehicleUpdateStatus u WHERE u.campaign.id = :campaignId")
-    long countTotalByCampaignId(@Param("campaignId") UUID campaignId);
+
+    /**
+     * One row per (stage, status) with its number of updates: everything stage evaluation and the
+     * campaign response need, in one grouped query instead of loading every update.
+     */
+    @Query("""
+            SELECT new com.pulse.connected.ota.StageStatusCount(u.stageIndex, u.status, COUNT(u))
+            FROM VehicleUpdateStatus u
+            WHERE u.campaign.id = :campaignId
+            GROUP BY u.stageIndex, u.status
+            """)
+    List<StageStatusCount> countByStageAndStatus(@Param("campaignId") UUID campaignId);
 }
