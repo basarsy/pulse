@@ -14,6 +14,8 @@ import com.pulse.connected.domain.ConnectivityState;
 import com.pulse.connected.messaging.dto.VehicleCommandEvent;
 import com.pulse.connected.vehicle.Vehicle;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.support.TransactionOperations;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +70,8 @@ class CommandServiceTest {
     void setUp() {
         commandService = new CommandService(commandRepository, vehicleRepository, rateLimiter,
                 eventPublisher, webSocketService, auditLogService, meterRegistry,
-                new CommandTimeoutProperties(Duration.ofMinutes(15), Duration.ofSeconds(60)));
+                new CommandTimeoutProperties(Duration.ofMinutes(15), Duration.ofSeconds(60)),
+                TransactionOperations.withoutTransaction());
 
         owner = User.builder()
                 .id(UUID.randomUUID())
@@ -115,7 +118,7 @@ class CommandServiceTest {
         when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
         when(commandRepository.findByIssuedByIdAndIdempotencyKey(owner.getId(), "idem-key-1")).thenReturn(Optional.empty());
         when(vehicleRepository.findById(onlineVehicle.getId())).thenReturn(Optional.of(onlineVehicle));
-        when(commandRepository.save(any(RemoteCommand.class))).thenReturn(pendingCommand);
+        when(commandRepository.saveAndFlush(any(RemoteCommand.class))).thenReturn(pendingCommand);
 
         CommandResponse response = commandService.issueCommand(onlineVehicle.getId(), request, owner);
 
@@ -182,7 +185,7 @@ class CommandServiceTest {
 
         when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
         when(vehicleRepository.findById(offlineVehicle.getId())).thenReturn(Optional.of(offlineVehicle));
-        when(commandRepository.save(any(RemoteCommand.class))).thenReturn(pendingCommand);
+        when(commandRepository.saveAndFlush(any(RemoteCommand.class))).thenReturn(pendingCommand);
 
         CommandResponse response = commandService.issueCommand(offlineVehicle.getId(), request, owner);
 
@@ -254,7 +257,7 @@ class CommandServiceTest {
     void issueCommand_BlankKey_StoredAsNoKey() {
         when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
         when(vehicleRepository.findById(offlineVehicle.getId())).thenReturn(Optional.of(offlineVehicle));
-        when(commandRepository.save(any(RemoteCommand.class))).thenAnswer(invocation -> {
+        when(commandRepository.saveAndFlush(any(RemoteCommand.class))).thenAnswer(invocation -> {
             RemoteCommand saved = invocation.getArgument(0);
             saved.setId(UUID.randomUUID());
             return saved;
@@ -263,8 +266,39 @@ class CommandServiceTest {
 
         commandService.issueCommand(offlineVehicle.getId(), keyedRequest(CommandType.LOCK, "  "), owner);
 
-        verify(commandRepository).save(saved.capture());
+        verify(commandRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getIdempotencyKey()).isNull();
+        verify(commandRepository, never()).findByIssuedByIdAndIdempotencyKey(any(), any());
+    }
+
+    @Test
+    void issueCommand_LosesInsertRace_ReturnsWinner() {
+        // A concurrent twin with the same key committed between our lookup and our insert.
+        RemoteCommand winner = keyedCommand(onlineVehicle, CommandType.LOCK, CommandStatus.SENT, "k");
+        when(commandRepository.findByIssuedByIdAndIdempotencyKey(owner.getId(), "k"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
+        when(vehicleRepository.findById(onlineVehicle.getId())).thenReturn(Optional.of(onlineVehicle));
+        when(commandRepository.saveAndFlush(any(RemoteCommand.class)))
+                .thenThrow(new DataIntegrityViolationException("uq_remote_commands_issuer_idempotency_key"));
+
+        CommandResponse response = commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.LOCK, "k"), owner);
+
+        assertThat(response.getId()).isEqualTo(winner.getId());
+        verifyNoInteractions(eventPublisher, auditLogService);
+    }
+
+    @Test
+    void issueCommand_ConstraintViolationWithoutKey_Rethrows() {
+        // Without a key there is no twin to return: the error must surface, not be read as a replay.
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("some other constraint");
+        when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
+        when(vehicleRepository.findById(onlineVehicle.getId())).thenReturn(Optional.of(onlineVehicle));
+        when(commandRepository.saveAndFlush(any(RemoteCommand.class))).thenThrow(failure);
+
+        assertThatThrownBy(() -> commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.LOCK, null), owner))
+                .isSameAs(failure);
         verify(commandRepository, never()).findByIssuedByIdAndIdempotencyKey(any(), any());
     }
 

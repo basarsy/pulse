@@ -75,7 +75,7 @@ flowchart LR
 - **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold.
 - **Telemetry Ingestion Pipeline**: Vehicle diagnostics (battery/fuel level, odometer, engine temperature, GPS) consumed from Kafka (`vehicle.telemetry`) and persisted in `telemetry_snapshots`.
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
-- **Idempotency & Rate Limiting**: Redis-backed, per-user idempotency keys and a fixed-window rate limit (10 commands/min, `429` when exceeded).
+- **Idempotency & Rate Limiting**: per-user idempotency keys enforced by the database (a retry returns the original command, even when identical requests race; keys never expire; reusing a key for another vehicle or command type is a `409`), and a Redis fixed-window rate limit that only counts new commands (10 commands/min, `429` when exceeded).
 - **Reliable Messaging**: Transactional outbox for everything sent to vehicles, retries with backoff and dead-letter topics for everything received, plus Resilience4j circuit breaker and retry on Kafka sends.
 - **Live Fleet Dashboard**: React app with live command status, OTA rollout planning and progress over authenticated WebSockets (STOMP), with per-vehicle subscription authorisation.
 - **Observability**: Asynchronous audit log, Micrometer domain metrics (including outbox backlog and dead letters), Prometheus and a provisioned Grafana dashboard.
@@ -101,7 +101,7 @@ flowchart LR
   - Remote command state machine (`PENDING` -> `SENT` -> `ACKNOWLEDGED` -> `COMPLETED` / `FAILED` / `TIMED_OUT` / `CANCELLED`; final states are final)
   - Kafka command pipeline (`vehicle.commands` and `vehicle.command-results`)
   - Real-time STOMP WebSocket push channel (`/topic/vehicles/{vehicleId}/commands`)
-  - Redis-backed idempotency tracking (24h TTL) and rate limiting (10 commands/min per user)
+  - Database-backed idempotency keys and Redis rate limiting (10 commands/min per user)
   - Scheduled command timeout job (`@Scheduled`): queue expiry and execution timeout, plus heartbeat-based offline detection
 - [x] **Phase 3 — OTA & Fleet Rollout Engine**
   - Software version package registry (`/api/v1/software-versions`)
