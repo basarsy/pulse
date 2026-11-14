@@ -115,7 +115,7 @@ public class CommandService {
     }
 
     @Transactional
-    public void processCommandResult(UUID commandId, CommandStatus resultStatus, String resultMessage) {
+    public void processCommandResult(UUID commandId, UUID vehicleId, CommandStatus resultStatus, String resultMessage) {
         Optional<RemoteCommand> commandOpt = commandRepository.findById(commandId);
         if (commandOpt.isEmpty()) {
             log.warn("Result received for non-existent command ID: {}", commandId);
@@ -123,8 +123,23 @@ public class CommandService {
         }
 
         RemoteCommand command = commandOpt.get();
+        if (!command.getVehicle().getId().equals(vehicleId)) {
+            log.warn("Ignoring result for command [{}] from vehicle [{}]: command belongs to vehicle [{}]",
+                    commandId, vehicleId, command.getVehicle().getId());
+            return;
+        }
+        if (!CommandStatusTransitions.isAllowed(command.getStatus(), resultStatus)) {
+            // Late or redelivered result (e.g. after a timeout or cancellation). Not an error, so
+            // it is not retried or dead-lettered.
+            log.info("Ignoring result for command [{}]: {} -> {} is not allowed",
+                    commandId, command.getStatus(), resultStatus);
+            return;
+        }
+
         command.setStatus(resultStatus);
-        command.setResolvedAt(Instant.now());
+        if (CommandStatusTransitions.isFinal(resultStatus)) {
+            command.setResolvedAt(Instant.now());
+        }
         command.setResultMessage(resultMessage);
         
         RemoteCommand updated = commandRepository.save(command);
@@ -163,11 +178,12 @@ public class CommandService {
             throw new IllegalStateException("Cannot cancel command in status: " + command.getStatus());
         }
 
-        command.setStatus(CommandStatus.FAILED);
+        command.setStatus(CommandStatus.CANCELLED);
         command.setResolvedAt(Instant.now());
         command.setResultMessage("Cancelled by user");
 
         RemoteCommand saved = commandRepository.save(command);
+        meterRegistry.counter("pulse.commands.cancelled").increment();
         auditLogService.log(actor.getId(), "COMMAND_CANCELLED", "RemoteCommand", commandId.toString(), null);
         CommandResponse response = mapToResponse(saved);
         webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), response);

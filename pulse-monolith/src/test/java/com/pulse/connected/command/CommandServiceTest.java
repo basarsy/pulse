@@ -199,8 +199,9 @@ class CommandServiceTest {
 
         CommandResponse response = commandService.cancelCommand(onlineVehicle.getId(), command.getId(), familyMember);
 
-        assertThat(response.getStatus()).isEqualTo(CommandStatus.FAILED);
+        assertThat(response.getStatus()).isEqualTo(CommandStatus.CANCELLED);
         assertThat(response.getResultMessage()).isEqualTo("Cancelled by user");
+        assertThat(meterRegistry.counter("pulse.commands.cancelled").count()).isEqualTo(1.0);
         verify(webSocketService).notifyCommandStatusChange(eq(onlineVehicle.getId()), any());
         verify(auditLogService).log(eq(familyMember.getId()), eq("COMMAND_CANCELLED"), any(), any(), any());
     }
@@ -215,13 +216,76 @@ class CommandServiceTest {
         verify(commandRepository, never()).save(any());
     }
 
+    @Test
+    void processCommandResult_AfterTimeout_IsIgnored() {
+        assertLateResultIgnored(CommandStatus.TIMED_OUT);
+    }
+
+    @Test
+    void processCommandResult_AfterCancel_IsIgnored() {
+        assertLateResultIgnored(CommandStatus.CANCELLED);
+    }
+
+    private void assertLateResultIgnored(CommandStatus finalStatus) {
+        RemoteCommand command = commandFor(onlineVehicle, finalStatus);
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
+
+        commandService.processCommandResult(command.getId(), onlineVehicle.getId(), CommandStatus.COMPLETED, "done");
+
+        assertThat(command.getStatus()).isEqualTo(finalStatus);
+        verify(commandRepository, never()).save(any());
+        verifyNoInteractions(webSocketService);
+    }
+
+    @Test
+    void processCommandResult_FromAnotherVehicle_IsIgnored() {
+        RemoteCommand command = commandFor(onlineVehicle, CommandStatus.SENT);
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
+
+        commandService.processCommandResult(command.getId(), offlineVehicle.getId(), CommandStatus.COMPLETED, "done");
+
+        assertThat(command.getStatus()).isEqualTo(CommandStatus.SENT);
+        verify(commandRepository, never()).save(any());
+        verifyNoInteractions(webSocketService);
+    }
+
+    @Test
+    void processCommandResult_Acknowledged_DoesNotResolve() {
+        RemoteCommand command = commandFor(onlineVehicle, CommandStatus.SENT);
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
+        when(commandRepository.save(command)).thenReturn(command);
+
+        commandService.processCommandResult(command.getId(), onlineVehicle.getId(), CommandStatus.ACKNOWLEDGED, null);
+
+        assertThat(command.getStatus()).isEqualTo(CommandStatus.ACKNOWLEDGED);
+        assertThat(command.getResolvedAt()).isNull();
+        verify(commandRepository).save(command);
+    }
+
+    @Test
+    void processCommandResult_Completed_Resolves() {
+        RemoteCommand command = commandFor(onlineVehicle, CommandStatus.ACKNOWLEDGED);
+        when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
+        when(commandRepository.save(command)).thenReturn(command);
+
+        commandService.processCommandResult(command.getId(), onlineVehicle.getId(), CommandStatus.COMPLETED, "done");
+
+        assertThat(command.getStatus()).isEqualTo(CommandStatus.COMPLETED);
+        assertThat(command.getResolvedAt()).isNotNull();
+        assertThat(meterRegistry.counter("pulse.commands.completed").count()).isEqualTo(1.0);
+    }
+
     private RemoteCommand pendingCommandFor(Vehicle vehicle) {
+        return commandFor(vehicle, CommandStatus.PENDING);
+    }
+
+    private RemoteCommand commandFor(Vehicle vehicle, CommandStatus status) {
         return RemoteCommand.builder()
                 .id(UUID.randomUUID())
                 .vehicle(vehicle)
                 .issuedBy(owner)
                 .type(CommandType.REMOTE_START)
-                .status(CommandStatus.PENDING)
+                .status(status)
                 .build();
     }
 }

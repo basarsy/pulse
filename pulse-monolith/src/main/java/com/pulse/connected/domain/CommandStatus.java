@@ -6,5 +6,6 @@ public enum CommandStatus {
     ACKNOWLEDGED,
     COMPLETED,
     FAILED,
-    TIMED_OUT
+    TIMED_OUT,
+    CANCELLED
 }
