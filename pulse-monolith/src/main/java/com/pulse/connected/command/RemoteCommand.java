@@ -49,6 +49,9 @@ public class RemoteCommand {
     @Column(name = "result_message", length = 500)
     private String resultMessage;
 
+    @Version
+    private Long version;
+
     @Column(name = "idempotency_key", length = 100)
     private String idempotencyKey;
 
