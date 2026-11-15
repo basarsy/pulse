@@ -6,12 +6,7 @@ import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign, SoftwareVersion } from '../api/types';
 import { useTopic } from '../context/LiveContext';
 import { useAsync } from '../hooks/useAsync';
-import { campaignColor, label, upsertById } from '../utils/format';
-
-export function campaignProgress(c: Campaign): number {
-  if (!c.totalVehiclesTargeted) return c.status === 'COMPLETED' ? 100 : 0;
-  return Math.round(((c.vehiclesInstalled + c.vehiclesFailed) / c.totalVehiclesTargeted) * 100);
-}
+import { campaignColor, campaignProgress, label, upsertById } from '../utils/format';
 
 function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void }) {
   const [form, setForm] = useState({ versionLabel: '', packageUrl: '', checksum: '', releaseNotes: '' });

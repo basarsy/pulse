@@ -1,4 +1,4 @@
-import type { CampaignStatus, CommandStatus, ConnectivityState, UpdateStatus } from '../api/types';
+import type { Campaign, CampaignStatus, CommandStatus, ConnectivityState, UpdateStatus } from '../api/types';
 
 type BadgeColor = 'green' | 'red' | 'yellow' | 'blue' | 'gray';
 
@@ -47,4 +47,10 @@ export function upsertById<T extends { id: string }>(list: T[] | undefined, item
   return items.some(existing => existing.id === item.id)
     ? items.map(existing => (existing.id === item.id ? item : existing))
     : [item, ...items];
+}
+
+/** Share of a campaign's targeted vehicles that have finished (installed or failed), as a whole percent. */
+export function campaignProgress(c: Campaign): number {
+  if (!c.totalVehiclesTargeted) return c.status === 'COMPLETED' ? 100 : 0;
+  return Math.round(((c.vehiclesInstalled + c.vehiclesFailed) / c.totalVehiclesTargeted) * 100);
 }
