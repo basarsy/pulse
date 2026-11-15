@@ -4,7 +4,6 @@ import com.pulse.connected.messaging.KafkaTopics;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.messaging.dto.CommandResultEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

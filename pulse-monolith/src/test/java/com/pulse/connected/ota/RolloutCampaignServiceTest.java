@@ -1,5 +1,6 @@
 package com.pulse.connected.ota;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
@@ -151,7 +152,7 @@ class RolloutCampaignServiceTest {
 
     @Test
     void createCampaign_explicitNullThreshold_uses10() throws Exception {
-        CreateCampaignRequest request = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+        CreateCampaignRequest request = new ObjectMapper().readValue("""
                 {"softwareVersionId":"%s","targetModel":"Model X","failureThresholdPercent":null}
                 """.formatted(version.getId()), CreateCampaignRequest.class);
 

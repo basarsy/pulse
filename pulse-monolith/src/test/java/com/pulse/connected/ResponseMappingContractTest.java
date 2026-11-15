@@ -3,19 +3,27 @@ package com.pulse.connected;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
+import com.pulse.connected.auth.UserRepository;
+import com.pulse.connected.command.CommandRateLimiter;
 import com.pulse.connected.command.CommandService;
 import com.pulse.connected.command.CommandTimeoutProperties;
+import com.pulse.connected.command.CommandWebSocketService;
 import com.pulse.connected.command.RemoteCommand;
+import com.pulse.connected.command.RemoteCommandRepository;
+import com.pulse.connected.common.AuditLogService;
 import com.pulse.connected.domain.CampaignStatus;
 import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.domain.CommandType;
 import com.pulse.connected.domain.ConnectivityState;
 import com.pulse.connected.domain.RolloutStageStatus;
 import com.pulse.connected.domain.UpdateStatus;
+import com.pulse.connected.ota.OtaWebSocketService;
 import com.pulse.connected.ota.RolloutCampaign;
+import com.pulse.connected.ota.RolloutCampaignRepository;
 import com.pulse.connected.ota.RolloutCampaignService;
 import com.pulse.connected.ota.RolloutStage;
 import com.pulse.connected.ota.SoftwareVersion;
+import com.pulse.connected.ota.SoftwareVersionRepository;
 import com.pulse.connected.ota.SoftwareVersionService;
 import com.pulse.connected.ota.StageStatusCount;
 import com.pulse.connected.ota.VehicleUpdateStatus;
@@ -32,10 +40,13 @@ import org.skyscreamer.jsonassert.JSONAssert;
 import org.skyscreamer.jsonassert.JSONCompareMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.json.JsonTest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -85,7 +96,7 @@ class ResponseMappingContractTest {
                 .model("Model X")
                 .modelYear(2024)
                 .owner(owner())
-                .authorizedUsers(new java.util.HashSet<>(Set.of(family)))
+                .authorizedUsers(new HashSet<>(Set.of(family)))
                 .connectivityState(ConnectivityState.OFFLINE)
                 .currentSoftwareVersion("v2.0.0")
                 .lastSeenAt(T5)
@@ -119,7 +130,7 @@ class ResponseMappingContractTest {
                 .failureThresholdPercent(12.5)
                 .createdBy(owner())
                 .createdAt(T5)
-                .stages(new java.util.ArrayList<>())
+                .stages(new ArrayList<>())
                 .build();
         campaign.getStages().add(RolloutStage.builder().id(ID_5).campaign(campaign).percentage(5)
                 .status(RolloutStageStatus.COMPLETED).startedAt(T6).completedAt(T7).build());
@@ -130,26 +141,26 @@ class ResponseMappingContractTest {
 
     private RolloutCampaignService rolloutService(VehicleUpdateStatusRepository updates) {
         return new RolloutCampaignService(
-                mock(com.pulse.connected.ota.RolloutCampaignRepository.class),
-                mock(com.pulse.connected.ota.SoftwareVersionRepository.class),
+                mock(RolloutCampaignRepository.class),
+                mock(SoftwareVersionRepository.class),
                 mock(VehicleRepository.class),
                 updates,
-                mock(org.springframework.context.ApplicationEventPublisher.class),
-                mock(com.pulse.connected.ota.OtaWebSocketService.class),
-                new SoftwareVersionService(mock(com.pulse.connected.ota.SoftwareVersionRepository.class)),
-                mock(com.pulse.connected.common.AuditLogService.class),
+                mock(ApplicationEventPublisher.class),
+                mock(OtaWebSocketService.class),
+                new SoftwareVersionService(mock(SoftwareVersionRepository.class)),
+                mock(AuditLogService.class),
                 new SimpleMeterRegistry());
     }
 
     @Test
     void commandResponse_mapsEveryField() throws Exception {
         CommandService service = new CommandService(
-                mock(com.pulse.connected.command.RemoteCommandRepository.class),
+                mock(RemoteCommandRepository.class),
                 mock(VehicleRepository.class),
-                mock(com.pulse.connected.command.CommandRateLimiter.class),
-                mock(org.springframework.context.ApplicationEventPublisher.class),
-                mock(com.pulse.connected.command.CommandWebSocketService.class),
-                mock(com.pulse.connected.common.AuditLogService.class),
+                mock(CommandRateLimiter.class),
+                mock(ApplicationEventPublisher.class),
+                mock(CommandWebSocketService.class),
+                mock(AuditLogService.class),
                 new SimpleMeterRegistry(),
                 new CommandTimeoutProperties(Duration.ofMinutes(15), Duration.ofSeconds(60)),
                 TransactionOperations.withoutTransaction());
@@ -227,7 +238,7 @@ class ResponseMappingContractTest {
 
     @Test
     void softwareVersionResponse_mapsEveryField() throws Exception {
-        SoftwareVersionService service = new SoftwareVersionService(mock(com.pulse.connected.ota.SoftwareVersionRepository.class));
+        SoftwareVersionService service = new SoftwareVersionService(mock(SoftwareVersionRepository.class));
 
         assertJson(service.mapToResponse(softwareVersion()), """
                 {"id":"00000000-0000-0000-0000-000000000004","versionLabel":"v2.1.0","releaseNotes":"Fixes",
@@ -263,7 +274,7 @@ class ResponseMappingContractTest {
     @Test
     void vehicleResponse_mapsEveryField() throws Exception {
         VehicleService service = new VehicleService(mock(VehicleRepository.class),
-                mock(com.pulse.connected.auth.UserRepository.class), mock(com.pulse.connected.common.AuditLogService.class));
+                mock(UserRepository.class), mock(AuditLogService.class));
 
         assertJson(service.mapToResponse(vehicle()), """
                 {"id":"00000000-0000-0000-0000-000000000002","vin":"WVWZZZ1JZXW000001","model":"Model X",

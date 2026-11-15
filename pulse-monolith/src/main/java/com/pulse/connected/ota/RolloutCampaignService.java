@@ -83,7 +83,7 @@ public class RolloutCampaignService {
                 .targetModel(request.targetModel())
                 .status(CampaignStatus.DRAFT)
                 .currentStageIndex(0)
-                .failureThresholdPercent(request.failureThresholdPercent() != null ? request.failureThresholdPercent() : 10.0)
+                .failureThresholdPercent(request.failureThresholdPercent())
                 .createdBy(currentUser)
                 .build();
 

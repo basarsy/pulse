@@ -1,6 +1,5 @@
 package com.pulse.connected.command;
 
-import com.pulse.connected.domain.CommandType;
 import com.pulse.connected.domain.CommandStatus;
 
 import com.pulse.connected.auth.User;

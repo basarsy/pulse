@@ -9,7 +9,6 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-
 @RestControllerAdvice
 @Order(1) // Higher priority than the common GlobalExceptionHandler
 public class SecurityExceptionHandler {

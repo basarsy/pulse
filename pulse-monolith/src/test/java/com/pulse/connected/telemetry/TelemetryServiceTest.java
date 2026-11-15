@@ -89,6 +89,10 @@ class TelemetryServiceTest {
         assertEquals(1.0, meterRegistry.counter("pulse.telemetry.ingested").count());
     }
 
+    private VehicleTelemetryEvent eventWithoutReadings(Instant timestamp) {
+        return new VehicleTelemetryEvent(vehicleId, null, null, null, null, null, timestamp);
+    }
+
     /**
      * Offline detection relies on lastSeenAt, so it must come from the server clock: a vehicle
      * clock running ahead (or a missing timestamp) must not keep it ONLINE or mark it OFFLINE.
@@ -97,14 +101,7 @@ class TelemetryServiceTest {
     @Test
     void ingestTelemetry_lastSeenAtUsesServerClock() {
         Instant vehicleClock = Instant.now().plus(java.time.Duration.ofDays(1));
-        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
-                vehicleId,
-                null,
-                null,
-                null,
-                null,
-                null,
-                vehicleClock);
+        VehicleTelemetryEvent event = eventWithoutReadings(vehicleClock);
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
 
         Instant before = Instant.now();
@@ -122,14 +119,7 @@ class TelemetryServiceTest {
 
     @Test
     void ingestTelemetry_missingTimestamp_stillMarksVehicleSeen() {
-        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
-                vehicleId,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
+        VehicleTelemetryEvent event = eventWithoutReadings(null);
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
 
         telemetryService.ingestTelemetry(event);
@@ -139,14 +129,7 @@ class TelemetryServiceTest {
 
     @Test
     void ingestTelemetry_vehicleNotFound_throwsException() {
-        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
-                vehicleId,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
+        VehicleTelemetryEvent event = eventWithoutReadings(null);
 
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.empty());
 

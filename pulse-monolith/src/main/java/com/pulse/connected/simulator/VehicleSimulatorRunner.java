@@ -72,7 +72,8 @@ public class VehicleSimulatorRunner {
         try {
             List<Vehicle> vehicles = vehicleRepository.findAll();
             for (Vehicle vehicle : vehicles) {
-                VehicleHeartbeatEvent heartbeat = new VehicleHeartbeatEvent(vehicle.getId(), vehicle.getVin(), ConnectivityState.ONLINE, Instant.now());
+                VehicleHeartbeatEvent heartbeat = new VehicleHeartbeatEvent(
+                        vehicle.getId(), vehicle.getVin(), ConnectivityState.ONLINE, Instant.now());
 
                 String payload = objectMapper.writeValueAsString(heartbeat);
                 kafkaTemplate.send(KafkaTopics.VEHICLE_HEARTBEAT, vehicle.getId().toString(), payload);
