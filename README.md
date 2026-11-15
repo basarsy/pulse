@@ -4,12 +4,12 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring Modulith](https://img.shields.io/badge/Spring-Modulith-6db33f.svg)](https://spring.io/projects/spring-modulith)
 [![React](https://img.shields.io/badge/React-18-blue.svg)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.0-646CFF.svg)](https://vitejs.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF.svg)](https://vitejs.dev/)
 [![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.7-black.svg)](https://kafka.apache.org/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-K8s-326CE5.svg)](https://kubernetes.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-7.0-red.svg)](https://redis.io/)
+[![Redis](https://img.shields.io/badge/Redis-7-red.svg)](https://redis.io/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-e6522c.svg)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboard-orange.svg)](https://grafana.com/)
 [![CI](https://github.com/basarsy/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/basarsy/pulse/actions/workflows/ci.yml)
@@ -31,19 +31,20 @@ Pulse is a single deployable Spring Boot application (`pulse-monolith`) organise
 | `telemetry` | Telemetry ingestion and history |
 | `simulator` | Optional vehicle simulator (heartbeats, command/OTA execution, telemetry) |
 | `common`, `domain`, `messaging`, `config` | Shared kernel: audit log, error handling, domain enums, Kafka topics & event payloads |
-| `websocket` | STOMP broker configuration |
+| `websocket` | STOMP broker, subscription authorisation, live updates shared between pods over Redis pub/sub |
 
 Each module owns its Kafka producers/consumers and WebSocket notifications. Where a dependency would point "backwards", modules communicate through Spring application events. For example, `vehicle` publishes `VehicleReconnectedEvent` and `command` flushes queued commands in response.
 
 ```mermaid
 flowchart LR
-    subgraph App["pulse-app (Spring Boot)"]
+    subgraph App["pulse-monolith (Spring Boot, 2 replicas in k8s)"]
         AUTH[auth]
         VEH[vehicle]
         CMD[command]
         OTA[ota]
         TEL[telemetry]
         SIM[simulator]
+        WS[websocket]
         SK["shared kernel<br/>common · domain · messaging"]
     end
 
@@ -55,10 +56,14 @@ flowchart LR
     CMD --> AUTH
     OTA --> AUTH
     VEH -. VehicleReconnectedEvent .-> CMD
+    CMD --> WS
+    OTA --> WS
+    WS --> AUTH
+    WS --> VEH
 
     DASH[React dashboard] -->|/api, /ws-pulse| App
     App --> PG[(PostgreSQL 16)]
-    App --> RD[(Redis 7)]
+    App <-->|rate limits · live updates between pods| RD[(Redis 7)]
     App <-->|commands · OTA · heartbeats · telemetry| KF[(Kafka)]
     PROM[Prometheus / Grafana] -->|/actuator/prometheus| App
 ```
@@ -134,7 +139,7 @@ flowchart LR
 - [x] **Phase 9 — Horizontal scaling**
   - ESLint 9 for the dashboard, enforced in CI with zero warnings
   - `@Scheduled` jobs locked with ShedLock in Postgres, so each runs once per interval across replicas
-  - Live updates shared between pods over Redis pub/sub: every browser gets every update exactly once, whichever pod produced it, and a Redis outage never slows rollouts or commands
+  - Live updates shared between pods over Redis pub/sub, so a browser gets an update whichever pod produced it, once and in order. Sending to Redis happens off the request thread: if Redis is down or slow, cross-pod updates are dropped and counted rather than slowing rollouts or commands
   - Outbox no longer republishes every incomplete event on startup (the locked resubmit job retries instead)
   - Kubernetes runs 2 app replicas; a two-instance integration test proves cross-pod delivery
 - [ ] **Next**
@@ -146,15 +151,16 @@ flowchart LR
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Java 21, Spring Boot 3.3.5, Spring Modulith 1.2
-- **Frontend**: React 18, TypeScript 5, Vite 5, STOMP / SockJS
+- **Backend**: Java 21, Spring Boot 3.3.5, Spring Modulith 1.2.5
+- **Frontend**: React 18, TypeScript 5, Vite 5, STOMP over WebSocket (`@stomp/stompjs`), Vitest, ESLint 9
 - **Security**: Spring Security, JJWT 0.12.6
 - **Persistence**: Spring Data JPA, PostgreSQL 16, Flyway
-- **Caching & Rate Limiting**: Redis 7, Spring Data Redis
+- **Rate limiting & live-update fan-out**: Redis 7 (Spring Data Redis, pub/sub)
+- **Scheduling across replicas**: ShedLock 6.10 (locks in Postgres)
 - **Messaging**: Apache Kafka 3.7 (KRaft mode)
 - **Fault Tolerance**: Resilience4j 2.2.0
 - **Observability**: Micrometer, Spring Boot Actuator, Prometheus, Grafana
-- **Testing**: JUnit 5, Mockito, Spring Modulith test, Testcontainers
+- **Testing**: JUnit 5, Mockito, AssertJ, Spring Modulith test, Testcontainers (Postgres, Redis), embedded Kafka
 - **Containerization & Orchestration**: Docker, Docker Compose, Kubernetes (Kustomize)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`)
 
@@ -168,6 +174,9 @@ pulse/
 ├── pulse-monolith/         # The application (all domain modules) + Dockerfile
 ├── pulse-dashboard/        # React dashboard + nginx image
 ├── k8s/                    # Kustomize manifests
+├── observability/grafana/  # Grafana provisioning and the "Pulse Overview" dashboard
+├── docs/superpowers/       # Design docs and implementation plans for each change
+├── pulse-platform-spec.md  # Original technical specification
 ├── docker-compose.yml      # Full local stack
 └── prometheus.yml
 ```
@@ -240,8 +249,3 @@ cp k8s/config/secrets.env.example k8s/config/secrets.env   # then set real value
 kubectl apply -k k8s
 ```
 
----
-
-## 📜 License
-
-This project is open-source and available under the [MIT License](LICENSE).
