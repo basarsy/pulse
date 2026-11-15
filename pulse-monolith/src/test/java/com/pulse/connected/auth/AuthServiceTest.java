@@ -53,11 +53,7 @@ class AuthServiceTest {
 
     @Test
     void register_Success() {
-        RegisterRequest request = RegisterRequest.builder()
-                .email("basar@example.com")
-                .password("password123")
-                .fullName("Başar Soytürk")
-                .build();
+        RegisterRequest request = new RegisterRequest("basar@example.com", "password123", "Başar Soytürk");
 
         when(userRepository.existsByEmail("basar@example.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("hashed_pass");
@@ -69,18 +65,14 @@ class AuthServiceTest {
         AuthResponse response = authService.register(request);
 
         assertThat(response).isNotNull();
-        assertThat(response.getAccessToken()).isEqualTo("mock_access_token");
-        assertThat(response.getUser().getEmail()).isEqualTo("basar@example.com");
+        assertThat(response.accessToken()).isEqualTo("mock_access_token");
+        assertThat(response.user().email()).isEqualTo("basar@example.com");
         verify(userRepository).save(any(User.class));
     }
 
     @Test
     void register_DuplicateEmail_ThrowsException() {
-        RegisterRequest request = RegisterRequest.builder()
-                .email("basar@example.com")
-                .password("password123")
-                .fullName("Başar Soytürk")
-                .build();
+        RegisterRequest request = new RegisterRequest("basar@example.com", "password123", "Başar Soytürk");
 
         when(userRepository.existsByEmail("basar@example.com")).thenReturn(true);
 
@@ -93,10 +85,7 @@ class AuthServiceTest {
 
     @Test
     void login_Success() {
-        LoginRequest request = LoginRequest.builder()
-                .email("basar@example.com")
-                .password("password123")
-                .build();
+        LoginRequest request = new LoginRequest("basar@example.com", "password123");
 
         when(userRepository.findByEmail("basar@example.com")).thenReturn(Optional.of(sampleUser));
         when(passwordEncoder.matches("password123", "hashed_pass")).thenReturn(true);
@@ -106,15 +95,12 @@ class AuthServiceTest {
         AuthResponse response = authService.login(request);
 
         assertThat(response).isNotNull();
-        assertThat(response.getAccessToken()).isEqualTo("mock_access_token");
+        assertThat(response.accessToken()).isEqualTo("mock_access_token");
     }
 
     @Test
     void login_InvalidPassword_ThrowsException() {
-        LoginRequest request = LoginRequest.builder()
-                .email("basar@example.com")
-                .password("wrong_password")
-                .build();
+        LoginRequest request = new LoginRequest("basar@example.com", "wrong_password");
 
         when(userRepository.findByEmail("basar@example.com")).thenReturn(Optional.of(sampleUser));
         when(passwordEncoder.matches("wrong_password", "hashed_pass")).thenReturn(false);

@@ -4,7 +4,6 @@ import com.pulse.connected.messaging.KafkaTopics;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.messaging.dto.CommandResultEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,8 +28,8 @@ public class CommandResultKafkaConsumer {
         // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
         CommandResultEvent event = objectMapper.readValue(message, CommandResultEvent.class);
         log.info("Received command result for command [{}] status [{}] vehicle [{}]",
-                event.getCommandId(), event.getStatus(), event.getVehicleId());
+                event.commandId(), event.status(), event.vehicleId());
 
-        commandService.processCommandResult(event.getCommandId(), event.getVehicleId(), event.getStatus(), event.getResultMessage());
+        commandService.processCommandResult(event.commandId(), event.vehicleId(), event.status(), event.resultMessage());
     }
 }

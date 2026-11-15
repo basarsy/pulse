@@ -71,12 +71,7 @@ class CreateCampaignRequestTest {
     }
 
     private List<ConstraintViolation<CreateCampaignRequest>> violations(List<Integer> stages, Double threshold) {
-        CreateCampaignRequest request = CreateCampaignRequest.builder()
-                .softwareVersionId(UUID.randomUUID())
-                .targetModel("BMW iX")
-                .failureThresholdPercent(threshold)
-                .stagePercentages(stages)
-                .build();
+        CreateCampaignRequest request = new CreateCampaignRequest(UUID.randomUUID(), "BMW iX", threshold, stages);
         return List.copyOf(validator.validate(request));
     }
 }

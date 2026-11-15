@@ -35,9 +35,9 @@ public class HeartbeatKafkaConsumer {
         // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
         VehicleHeartbeatEvent event = objectMapper.readValue(message, VehicleHeartbeatEvent.class);
 
-        Optional<Vehicle> vehicleOpt = vehicleRepository.findById(event.getVehicleId());
+        Optional<Vehicle> vehicleOpt = vehicleRepository.findById(event.vehicleId());
         if (vehicleOpt.isEmpty()) {
-            log.warn("Heartbeat received for unknown vehicle ID: {}", event.getVehicleId());
+            log.warn("Heartbeat received for unknown vehicle ID: {}", event.vehicleId());
             return;
         }
 

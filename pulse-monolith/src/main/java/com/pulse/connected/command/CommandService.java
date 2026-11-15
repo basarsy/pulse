@@ -1,6 +1,5 @@
 package com.pulse.connected.command;
 
-import com.pulse.connected.domain.CommandType;
 import com.pulse.connected.domain.CommandStatus;
 
 import com.pulse.connected.auth.User;
@@ -80,8 +79,8 @@ public class CommandService {
      */
     public CommandResponse issueCommand(UUID vehicleId, IssueCommandRequest request, User currentUser) {
         // A blank key means "no key"; storing it would make the second blank-key request collide.
-        String idempotencyKey = request.getIdempotencyKey() == null || request.getIdempotencyKey().isBlank()
-                ? null : request.getIdempotencyKey();
+        String idempotencyKey = request.idempotencyKey() == null || request.idempotencyKey().isBlank()
+                ? null : request.idempotencyKey();
 
         if (idempotencyKey != null) {
             Optional<CommandResponse> replayed = findReplay(currentUser.getId(), idempotencyKey, vehicleId, request);
@@ -117,15 +116,15 @@ public class CommandService {
         RemoteCommand command = RemoteCommand.builder()
                 .vehicle(vehicle)
                 .issuedBy(currentUser)
-                .type(request.getType())
+                .type(request.type())
                 .status(CommandStatus.PENDING)
                 .idempotencyKey(idempotencyKey)
                 .build();
 
         RemoteCommand saved = commandRepository.saveAndFlush(command);
 
-        meterRegistry.counter("pulse.commands.issued", "type", request.getType().name()).increment();
-        auditLogService.log(currentUser.getId(), "COMMAND_ISSUED", "RemoteCommand", saved.getId().toString(), Map.of("type", request.getType().name(), "vehicleId", vehicleId.toString()));
+        meterRegistry.counter("pulse.commands.issued", "type", request.type().name()).increment();
+        auditLogService.log(currentUser.getId(), "COMMAND_ISSUED", "RemoteCommand", saved.getId().toString(), Map.of("type", request.type().name(), "vehicleId", vehicleId.toString()));
 
         // Dispatch immediately if vehicle is ONLINE
         if (vehicle.getConnectivityState() == ConnectivityState.ONLINE) {
@@ -148,7 +147,7 @@ public class CommandService {
         if (!existing.getVehicle().getId().equals(vehicleId)) {
             throw new DuplicateResourceException("Idempotency key already used for a command on a different vehicle");
         }
-        if (existing.getType() != request.getType()) {
+        if (existing.getType() != request.type()) {
             throw new DuplicateResourceException("Idempotency key already used for a " + existing.getType() + " command");
         }
         log.info("Idempotency hit for key [{}]. Returning existing command [{}]", existing.getIdempotencyKey(), existing.getId());
@@ -312,30 +311,28 @@ public class CommandService {
         command.setSentAt(Instant.now());
         commandRepository.save(command);
 
-        VehicleCommandEvent event = VehicleCommandEvent.builder()
-                .commandId(command.getId())
-                .vehicleId(command.getVehicle().getId())
-                .type(command.getType())
-                .issuedAt(command.getRequestedAt())
-                .idempotencyKey(command.getIdempotencyKey())
-                .build();
+        VehicleCommandEvent event = new VehicleCommandEvent(
+                command.getId(),
+                command.getVehicle().getId(),
+                command.getType(),
+                command.getRequestedAt(),
+                command.getIdempotencyKey());
 
         // Recorded in the outbox with this transaction; sent to Kafka after commit (CommandKafkaRelay).
         eventPublisher.publishEvent(event);
     }
 
     public CommandResponse mapToResponse(RemoteCommand command) {
-        return CommandResponse.builder()
-                .id(command.getId())
-                .vehicleId(command.getVehicle().getId())
-                .issuedByUserId(command.getIssuedBy().getId())
-                .type(command.getType())
-                .status(command.getStatus())
-                .requestedAt(command.getRequestedAt())
-                .sentAt(command.getSentAt())
-                .resolvedAt(command.getResolvedAt())
-                .resultMessage(command.getResultMessage())
-                .idempotencyKey(command.getIdempotencyKey())
-                .build();
+        return new CommandResponse(
+                command.getId(),
+                command.getVehicle().getId(),
+                command.getIssuedBy().getId(),
+                command.getType(),
+                command.getStatus(),
+                command.getRequestedAt(),
+                command.getSentAt(),
+                command.getResolvedAt(),
+                command.getResultMessage(),
+                command.getIdempotencyKey());
     }
 }

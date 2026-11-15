@@ -39,18 +39,18 @@ public class CommandKafkaProducer {
         try {
             String payload = objectMapper.writeValueAsString(event);
             SendResult<String, String> result = kafkaTemplate
-                    .send(KafkaTopics.VEHICLE_COMMANDS, event.getVehicleId().toString(), payload)
+                    .send(KafkaTopics.VEHICLE_COMMANDS, event.vehicleId().toString(), payload)
                     .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             log.info("Dispatched command [{}] type [{}] to vehicle [{}] on partition [{}]",
-                    event.getCommandId(), event.getType(), event.getVehicleId(),
+                    event.commandId(), event.type(), event.vehicleId(),
                     result.getRecordMetadata().partition());
         } catch (JsonProcessingException e) {
-            throw new KafkaPublishException("Could not serialise command " + event.getCommandId(), e);
+            throw new KafkaPublishException("Could not serialise command " + event.commandId(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new KafkaPublishException("Interrupted while sending command " + event.getCommandId(), e);
+            throw new KafkaPublishException("Interrupted while sending command " + event.commandId(), e);
         } catch (Exception e) {
-            throw new KafkaPublishException("Failed to send command " + event.getCommandId(), e);
+            throw new KafkaPublishException("Failed to send command " + event.commandId(), e);
         }
     }
 }

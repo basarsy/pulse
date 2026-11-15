@@ -31,6 +31,7 @@ class RolloutCampaignControllerValidationTest {
 
         mvc.perform(post("/api/v1/rollouts").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Bad Request"))
                 .andExpect(jsonPath("$.message").value("Validation failed"))
                 .andExpect(jsonPath("$.details[0]").value("stagePercentages: stages must increase: 25 follows 50"));
 

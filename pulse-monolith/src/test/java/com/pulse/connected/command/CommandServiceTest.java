@@ -101,10 +101,7 @@ class CommandServiceTest {
 
     @Test
     void issueCommand_OnlineVehicle_DispatchesToKafka() {
-        IssueCommandRequest request = IssueCommandRequest.builder()
-                .type(CommandType.LOCK)
-                .idempotencyKey("idem-key-1")
-                .build();
+        IssueCommandRequest request = new IssueCommandRequest(CommandType.LOCK, "idem-key-1");
 
         RemoteCommand pendingCommand = RemoteCommand.builder()
                 .id(UUID.randomUUID())
@@ -123,7 +120,7 @@ class CommandServiceTest {
         CommandResponse response = commandService.issueCommand(onlineVehicle.getId(), request, owner);
 
         assertThat(response).isNotNull();
-        assertThat(response.getType()).isEqualTo(CommandType.LOCK);
+        assertThat(response.type()).isEqualTo(CommandType.LOCK);
         verify(eventPublisher).publishEvent(any(VehicleCommandEvent.class));
         verify(webSocketService).notifyCommandStatusChange(eq(onlineVehicle.getId()), any());
         assertThat(pendingCommand.getStatus()).isEqualTo(CommandStatus.SENT);
@@ -171,9 +168,7 @@ class CommandServiceTest {
 
     @Test
     void issueCommand_OfflineVehicle_QueuesAsPending() {
-        IssueCommandRequest request = IssueCommandRequest.builder()
-                .type(CommandType.UNLOCK)
-                .build();
+        IssueCommandRequest request = new IssueCommandRequest(CommandType.UNLOCK, null);
 
         RemoteCommand pendingCommand = RemoteCommand.builder()
                 .id(UUID.randomUUID())
@@ -190,15 +185,13 @@ class CommandServiceTest {
         CommandResponse response = commandService.issueCommand(offlineVehicle.getId(), request, owner);
 
         assertThat(response).isNotNull();
-        assertThat(response.getStatus()).isEqualTo(CommandStatus.PENDING);
+        assertThat(response.status()).isEqualTo(CommandStatus.PENDING);
         verify(eventPublisher, never()).publishEvent(any(VehicleCommandEvent.class));
     }
 
     @Test
     void issueCommand_RateLimitExceeded_ThrowsException() {
-        IssueCommandRequest request = IssueCommandRequest.builder()
-                .type(CommandType.LOCK)
-                .build();
+        IssueCommandRequest request = new IssueCommandRequest(CommandType.LOCK, null);
 
         when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(false);
 
@@ -225,8 +218,8 @@ class CommandServiceTest {
 
         CommandResponse response = commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.LOCK, "k"), owner);
 
-        assertThat(response.getId()).isEqualTo(original.getId());
-        assertThat(response.getStatus()).isEqualTo(CommandStatus.COMPLETED);
+        assertThat(response.id()).isEqualTo(original.getId());
+        assertThat(response.status()).isEqualTo(CommandStatus.COMPLETED);
         verify(commandRepository, never()).save(any());
         verifyNoInteractions(eventPublisher, webSocketService, auditLogService, rateLimiter);
     }
@@ -239,7 +232,7 @@ class CommandServiceTest {
 
         CommandResponse response = commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.LOCK, "k"), owner);
 
-        assertThat(response.getId()).isEqualTo(original.getId());
+        assertThat(response.id()).isEqualTo(original.getId());
         verifyNoInteractions(rateLimiter);
     }
 
@@ -285,7 +278,7 @@ class CommandServiceTest {
 
         CommandResponse response = commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.LOCK, "k"), owner);
 
-        assertThat(response.getId()).isEqualTo(winner.getId());
+        assertThat(response.id()).isEqualTo(winner.getId());
         verifyNoInteractions(eventPublisher, auditLogService);
     }
 
@@ -303,7 +296,7 @@ class CommandServiceTest {
     }
 
     private IssueCommandRequest keyedRequest(CommandType type, String key) {
-        return IssueCommandRequest.builder().type(type).idempotencyKey(key).build();
+        return new IssueCommandRequest(type, key);
     }
 
     private RemoteCommand keyedCommand(Vehicle vehicle, CommandType type, CommandStatus status, String key) {
@@ -341,8 +334,8 @@ class CommandServiceTest {
 
         CommandResponse response = commandService.cancelCommand(onlineVehicle.getId(), command.getId(), familyMember);
 
-        assertThat(response.getStatus()).isEqualTo(CommandStatus.CANCELLED);
-        assertThat(response.getResultMessage()).isEqualTo("Cancelled by user");
+        assertThat(response.status()).isEqualTo(CommandStatus.CANCELLED);
+        assertThat(response.resultMessage()).isEqualTo("Cancelled by user");
         assertThat(meterRegistry.counter("pulse.commands.cancelled").count()).isEqualTo(1.0);
         verify(webSocketService).notifyCommandStatusChange(eq(onlineVehicle.getId()), any());
         verify(auditLogService).log(eq(familyMember.getId()), eq("COMMAND_CANCELLED"), any(), any(), any());
@@ -401,7 +394,7 @@ class CommandServiceTest {
         assertThat(fresh.getStatus()).isEqualTo(CommandStatus.SENT);
         ArgumentCaptor<VehicleCommandEvent> sent = ArgumentCaptor.forClass(VehicleCommandEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getCommandId()).isEqualTo(fresh.getId());
+        assertThat(sent.getValue().commandId()).isEqualTo(fresh.getId());
     }
 
     @Test

@@ -22,7 +22,7 @@ public class CommandWebSocketService {
     public void notifyCommandStatusChange(UUID vehicleId, CommandResponse commandResponse) {
         String destination = "/topic/vehicles/" + vehicleId + "/commands";
         log.info("Pushing WebSocket update for command [{}] status [{}] to destination [{}]",
-                commandResponse.getId(), commandResponse.getStatus(), destination);
+                commandResponse.id(), commandResponse.status(), destination);
         liveUpdates.publish(destination, commandResponse);
     }
 }

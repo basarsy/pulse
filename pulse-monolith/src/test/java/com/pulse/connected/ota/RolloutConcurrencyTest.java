@@ -109,13 +109,14 @@ class RolloutConcurrencyTest extends AbstractIntegrationTest {
         List<Future<?>> results = new ArrayList<>();
         try {
             for (VehicleUpdateStatus update : stageOne) {
-                OtaUpdateProgressEvent installed = OtaUpdateProgressEvent.builder()
-                        .updateStatusId(update.getId())
-                        .vehicleId(update.getVehicle().getId())
-                        .campaignId(campaignId)
-                        .status(UpdateStatus.INSTALLED)
-                        .progressPercent(100)
-                        .build();
+                OtaUpdateProgressEvent installed = new OtaUpdateProgressEvent(
+                        update.getId(),
+                        update.getVehicle().getId(),
+                        campaignId,
+                        UpdateStatus.INSTALLED,
+                        100,
+                        null,
+                        null);
                 results.add(pool.submit(() -> {
                     start.await();
                     campaignService.handleVehicleUpdateProgress(installed);

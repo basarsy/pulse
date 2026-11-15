@@ -1,5 +1,6 @@
 package com.pulse.connected.ota;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pulse.connected.auth.Role;
 import com.pulse.connected.auth.User;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
@@ -33,6 +34,9 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class RolloutCampaignServiceTest {
+
+    private static final SoftwareVersionResponse ANY_VERSION_RESPONSE =
+            new SoftwareVersionResponse(null, null, null, null, null, false, null);
 
     @Mock
     private RolloutCampaignRepository campaignRepository;
@@ -134,21 +138,32 @@ class RolloutCampaignServiceTest {
 
     @Test
     void createCampaign_Success() {
-        CreateCampaignRequest request = CreateCampaignRequest.builder()
-                .softwareVersionId(version.getId())
-                .targetModel("BMW iX xDrive50")
-                .failureThresholdPercent(15.0)
-                .stagePercentages(List.of(10, 50, 100))
-                .build();
+        CreateCampaignRequest request = new CreateCampaignRequest(version.getId(), "BMW iX xDrive50", 15.0, List.of(10, 50, 100));
 
         when(softwareVersionRepository.findById(version.getId())).thenReturn(Optional.of(version));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         CampaignResponse response = campaignService.createCampaign(request, admin);
 
         assertThat(response).isNotNull();
         verify(campaignRepository).save(any(RolloutCampaign.class));
+    }
+
+    @Test
+    void createCampaign_explicitNullThreshold_uses10() throws Exception {
+        CreateCampaignRequest request = new ObjectMapper().readValue("""
+                {"softwareVersionId":"%s","targetModel":"Model X","failureThresholdPercent":null}
+                """.formatted(version.getId()), CreateCampaignRequest.class);
+
+        when(softwareVersionRepository.findById(version.getId())).thenReturn(Optional.of(version));
+        when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
+
+        campaignService.createCampaign(request, admin);
+
+        ArgumentCaptor<RolloutCampaign> saved = ArgumentCaptor.forClass(RolloutCampaign.class);
+        verify(campaignRepository).save(saved.capture());
+        assertThat(saved.getValue().getFailureThresholdPercent()).isEqualTo(10.0);
     }
 
     @Test
@@ -165,7 +180,7 @@ class RolloutCampaignServiceTest {
         // Stage 1 is 50% of two vehicles: exactly one instruction, to the first vehicle by VIN.
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle1.getId());
+        assertThat(sent.getValue().vehicleId()).isEqualTo(vehicle1.getId());
     }
 
     @Test
@@ -181,7 +196,7 @@ class RolloutCampaignServiceTest {
 
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        assertThat(sent.getValue().vehicleId()).isEqualTo(vehicle2.getId());
     }
 
     @Test
@@ -196,7 +211,7 @@ class RolloutCampaignServiceTest {
 
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        assertThat(sent.getValue().vehicleId()).isEqualTo(vehicle2.getId());
         verify(vehicleUpdateStatusRepository).findVehiclesToInstruct(
                 campaign.getId(), campaign.getTargetModel(), vehicle2.getVin(), version.getVersionLabel());
     }
@@ -224,7 +239,7 @@ class RolloutCampaignServiceTest {
         when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(2L);
         when(vehicleUpdateStatusRepository.findVinsOfModel(campaign.getTargetModel(), PageRequest.of(1, 1)))
                 .thenReturn(List.of());
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.executeActiveStage(campaign);
 
@@ -236,7 +251,7 @@ class RolloutCampaignServiceTest {
         when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
         when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(0L);
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.startCampaign(campaign.getId(), admin);
 
@@ -280,7 +295,7 @@ class RolloutCampaignServiceTest {
                 new StageStatusCount(0, UpdateStatus.INSTALLED, 2),
                 new StageStatusCount(1, UpdateStatus.DOWNLOADING, 1),
                 new StageStatusCount(1, UpdateStatus.FAILED, 1)));
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.handleVehicleUpdateProgress(progress(failing, UpdateStatus.FAILED));
 
@@ -339,13 +354,14 @@ class RolloutCampaignServiceTest {
     }
 
     private OtaUpdateProgressEvent progress(VehicleUpdateStatus update, UpdateStatus status) {
-        return OtaUpdateProgressEvent.builder()
-                .updateStatusId(update.getId())
-                .vehicleId(update.getVehicle().getId())
-                .campaignId(campaign.getId())
-                .status(status)
-                .progressPercent(50)
-                .build();
+        return new OtaUpdateProgressEvent(
+                update.getId(),
+                update.getVehicle().getId(),
+                campaign.getId(),
+                status,
+                50,
+                null,
+                null);
     }
 
     private static Answer<VehicleUpdateStatus> saved() {
@@ -374,15 +390,16 @@ class RolloutCampaignServiceTest {
         when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
         when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId()))
                 .thenReturn(List.of(new StageStatusCount(0, UpdateStatus.FAILED, 1)));
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
-        OtaUpdateProgressEvent failedEvent = OtaUpdateProgressEvent.builder()
-                .updateStatusId(updateStatus.getId())
-                .vehicleId(vehicle1.getId())
-                .campaignId(campaign.getId())
-                .status(UpdateStatus.FAILED)
-                .errorMessage("ECU checksum mismatch")
-                .build();
+        OtaUpdateProgressEvent failedEvent = new OtaUpdateProgressEvent(
+                updateStatus.getId(),
+                vehicle1.getId(),
+                campaign.getId(),
+                UpdateStatus.FAILED,
+                null,
+                "ECU checksum mismatch",
+                null);
 
         campaignService.handleVehicleUpdateProgress(failedEvent);
 
@@ -438,8 +455,14 @@ class RolloutCampaignServiceTest {
     void progressEvent_UnknownUpdate_NotFound() {
         UUID unknown = UUID.randomUUID();
         when(vehicleUpdateStatusRepository.findCampaignIdById(unknown)).thenReturn(Optional.empty());
-        OtaUpdateProgressEvent event = OtaUpdateProgressEvent.builder()
-                .updateStatusId(unknown).vehicleId(vehicle1.getId()).status(UpdateStatus.INSTALLED).build();
+        OtaUpdateProgressEvent event = new OtaUpdateProgressEvent(
+                unknown,
+                vehicle1.getId(),
+                null,
+                UpdateStatus.INSTALLED,
+                null,
+                null,
+                null);
 
         assertThatThrownBy(() -> campaignService.handleVehicleUpdateProgress(event))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -451,7 +474,7 @@ class RolloutCampaignServiceTest {
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(campaign)).thenReturn(campaign);
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.pauseCampaign(campaign.getId(), admin);
         campaignService.abortCampaign(campaign.getId(), admin);

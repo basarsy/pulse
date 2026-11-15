@@ -31,7 +31,7 @@ public class OtaProgressKafkaConsumer {
         // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
         OtaUpdateProgressEvent event = objectMapper.readValue(message, OtaUpdateProgressEvent.class);
         log.info("Received OTA update progress for update [{}] vehicle [{}] status [{}] progress [{}%]",
-                event.getUpdateStatusId(), event.getVehicleId(), event.getStatus(), event.getProgressPercent());
+                event.updateStatusId(), event.vehicleId(), event.status(), event.progressPercent());
 
         campaignService.handleVehicleUpdateProgress(event);
     }

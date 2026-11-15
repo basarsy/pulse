@@ -39,18 +39,18 @@ public class OtaKafkaProducer {
         try {
             String payload = objectMapper.writeValueAsString(event);
             SendResult<String, String> result = kafkaTemplate
-                    .send(KafkaTopics.OTA_INSTRUCTIONS, event.getVehicleId().toString(), payload)
+                    .send(KafkaTopics.OTA_INSTRUCTIONS, event.vehicleId().toString(), payload)
                     .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             log.info("Dispatched OTA instruction [{}] version [{}] to vehicle [{}] on partition [{}]",
-                    event.getUpdateStatusId(), event.getTargetVersionLabel(), event.getVehicleId(),
+                    event.updateStatusId(), event.targetVersionLabel(), event.vehicleId(),
                     result.getRecordMetadata().partition());
         } catch (JsonProcessingException e) {
-            throw new KafkaPublishException("Could not serialise OTA instruction " + event.getUpdateStatusId(), e);
+            throw new KafkaPublishException("Could not serialise OTA instruction " + event.updateStatusId(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new KafkaPublishException("Interrupted while sending OTA instruction " + event.getUpdateStatusId(), e);
+            throw new KafkaPublishException("Interrupted while sending OTA instruction " + event.updateStatusId(), e);
         } catch (Exception e) {
-            throw new KafkaPublishException("Failed to send OTA instruction " + event.getUpdateStatusId(), e);
+            throw new KafkaPublishException("Failed to send OTA instruction " + event.updateStatusId(), e);
         }
     }
 }

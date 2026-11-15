@@ -37,28 +37,28 @@ public class TelemetryService {
 
     @Transactional
     public void ingestTelemetry(VehicleTelemetryEvent event) {
-        Vehicle vehicle = vehicleRepository.findById(event.getVehicleId())
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with ID: " + event.getVehicleId()));
+        Vehicle vehicle = vehicleRepository.findById(event.vehicleId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with ID: " + event.vehicleId()));
 
         TelemetrySnapshot snapshot = TelemetrySnapshot.builder()
                 .vehicle(vehicle)
-                .batteryOrFuelLevel(event.getBatteryOrFuelLevel())
-                .odometerKm(event.getOdometerKm())
-                .engineTempC(event.getEngineTempC())
-                .lat(event.getLat())
-                .lng(event.getLng())
+                .batteryOrFuelLevel(event.batteryOrFuelLevel())
+                .odometerKm(event.odometerKm())
+                .engineTempC(event.engineTempC())
+                .lat(event.lat())
+                .lng(event.lng())
                 .build();
                 
-        if (event.getTimestamp() != null) {
-            snapshot.setRecordedAt(event.getTimestamp());
+        if (event.timestamp() != null) {
+            snapshot.setRecordedAt(event.timestamp());
         }
 
         telemetrySnapshotRepository.save(snapshot);
 
-        vehicle.setBatteryOrFuelLevel(event.getBatteryOrFuelLevel());
-        vehicle.setOdometerKm(event.getOdometerKm());
-        vehicle.setLastLat(event.getLat());
-        vehicle.setLastLng(event.getLng());
+        vehicle.setBatteryOrFuelLevel(event.batteryOrFuelLevel());
+        vehicle.setOdometerKm(event.odometerKm());
+        vehicle.setLastLat(event.lat());
+        vehicle.setLastLng(event.lng());
         // Server time, not the vehicle's clock: offline detection relies on lastSeenAt.
         vehicle.setLastSeenAt(Instant.now());
         vehicleRepository.save(vehicle);
@@ -91,15 +91,14 @@ public class TelemetryService {
     }
 
     private TelemetrySnapshotResponse mapToResponse(TelemetrySnapshot snapshot) {
-        return TelemetrySnapshotResponse.builder()
-                .id(snapshot.getId())
-                .vehicleId(snapshot.getVehicle().getId())
-                .recordedAt(snapshot.getRecordedAt())
-                .batteryOrFuelLevel(snapshot.getBatteryOrFuelLevel())
-                .odometerKm(snapshot.getOdometerKm())
-                .engineTempC(snapshot.getEngineTempC())
-                .lat(snapshot.getLat())
-                .lng(snapshot.getLng())
-                .build();
+        return new TelemetrySnapshotResponse(
+                snapshot.getId(),
+                snapshot.getVehicle().getId(),
+                snapshot.getRecordedAt(),
+                snapshot.getBatteryOrFuelLevel(),
+                snapshot.getOdometerKm(),
+                snapshot.getEngineTempC(),
+                snapshot.getLat(),
+                snapshot.getLng());
     }
 }

@@ -65,7 +65,7 @@ class IdempotencyRaceTest extends AbstractIntegrationTest {
                 .currentSoftwareVersion("1.0.0")
                 .build());
         String key = "race-" + UUID.randomUUID();
-        IssueCommandRequest request = IssueCommandRequest.builder().type(CommandType.LOCK).idempotencyKey(key).build();
+        IssueCommandRequest request = new IssueCommandRequest(CommandType.LOCK, key);
 
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(TWINS);
@@ -81,7 +81,7 @@ class IdempotencyRaceTest extends AbstractIntegrationTest {
 
             List<UUID> ids = new ArrayList<>();
             for (Future<CommandResponse> result : results) {
-                ids.add(result.get(30, TimeUnit.SECONDS).getId()); // rethrows any request's failure
+                ids.add(result.get(30, TimeUnit.SECONDS).id()); // rethrows any request's failure
             }
 
             assertThat(ids).hasSize(TWINS).containsOnly(ids.get(0));
