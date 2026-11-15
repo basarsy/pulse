@@ -21,6 +21,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureMessageBroker(MessageBrokerRegistry config) {
         config.enableSimpleBroker("/topic");
         config.setApplicationDestinationPrefixes("/app");
+        // Messages to clients go through a thread pool, so without this a session can receive
+        // them out of order; the dashboard keeps the last update, so order matters.
+        config.setPreservePublishOrder(true);
     }
 
     @Override

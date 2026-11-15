@@ -131,6 +131,35 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         assertThat(received).containsExactlyElementsOf(sent);
     }
 
+    @Test
+    void updatesKeepTheirOrderOnTheSameInstance() throws Exception {
+        // No Redis involved: A's own browsers. The broker sends to clients through a thread pool.
+        String token = registerAndGetToken("ws-order-local");
+        UUID vehicle = UUID.fromString(createVehicle(token));
+        BlockingQueue<Map<String, Object>> onA = subscribe(port, token, "/topic/vehicles/" + vehicle + "/commands");
+        await().atMost(Duration.ofSeconds(15)).pollInterval(Duration.ofMillis(200)).until(() -> {
+            commandWebSocketService.notifyCommandStatusChange(vehicle, update(vehicle)); // probe
+            return !onA.isEmpty();
+        });
+
+        List<String> sent = new ArrayList<>();
+        for (int i = 0; i < 5000; i++) {
+            CommandResponse update = update(vehicle);
+            sent.add(update.getId().toString());
+            commandWebSocketService.notifyCommandStatusChange(vehicle, update);
+        }
+
+        List<Object> received = new ArrayList<>();
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (received.size() < sent.size() && System.nanoTime() < deadline) {
+            Map<String, Object> frame = onA.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (frame != null && sent.contains(frame.get("id"))) {
+                received.add(frame.get("id"));
+            }
+        }
+        assertThat(received).containsExactlyElementsOf(sent);
+    }
+
     /** Instance B, shared by the tests: a second running app, subscribed to Redis. */
     private ConfigurableApplicationContext instanceB() {
         if (instanceB == null) {
