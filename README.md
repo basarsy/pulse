@@ -74,6 +74,119 @@ flowchart LR
 
 ---
 
+## 🧭 Design decisions
+
+Each decision below lists the problem, what Pulse does, what was ruled out, and the test that proves it. The design doc for every change is in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+Most of them show up on the path of a single remote command. In Kubernetes, the request, the Kafka result and the browser's WebSocket can each land on a different pod:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant A as Pod handling the request
+    participant DB as PostgreSQL
+    participant K as Kafka
+    participant V as Vehicle
+    participant C as Pod consuming the result
+    participant R as Redis
+    participant S as Pod holding the browser's WebSocket
+    B->>A: POST /api/v1/vehicles/{id}/commands
+    A->>DB: one transaction: command row + outbox row
+    A-->>B: 202 Accepted
+    A->>K: after commit: vehicle.commands (retried until delivered)
+    K->>V: command
+    V->>K: vehicle.command-results
+    K->>C: result (retried with backoff, then to the dead-letter topic)
+    C->>DB: forward-only status change
+    C->>R: live update, sent off the request thread
+    R->>S: live update
+    S->>B: STOMP /topic/vehicles/{id}/commands, in publish order
+```
+
+### 1. Kafka sends go through a transactional outbox
+
+- **Problem:** a command is saved in Postgres and sent to Kafka. Sending inside the transaction can send a command whose transaction then rolls back. Sending after the commit loses the command if Kafka is down at that moment.
+- **Decision:**
+  - The service publishes an event inside its transaction. Spring Modulith stores it in the `event_publication` table in that same transaction, and a listener sends it to Kafka only after the commit.
+  - A scheduled job resubmits failed publications after a minute and purges completed ones after 7 days. Delivery is therefore at least once.
+  - Incoming messages are retried with exponential backoff. Malformed ones go straight to `<topic>.DLT`, so no message is dropped silently.
+- **Ruled out:** Kafka transactions. They make Kafka writes atomic with each other, not with the Postgres write.
+- **Proof:**
+  - [`KafkaRoundTripTest`](pulse-monolith/src/test/java/com/pulse/connected/KafkaRoundTripTest.java) drives commands and a two-stage rollout through Kafka and the vehicle simulator, then checks that the outbox drains.
+  - [`KafkaErrorHandlingTest`](pulse-monolith/src/test/java/com/pulse/connected/KafkaErrorHandlingTest.java) checks that malformed results land in the dead-letter topic.
+
+### 2. The database enforces idempotency keys
+
+- **Problem:** keys were checked in Redis, with a unique constraint in Postgres behind them. The two stores disagreed:
+  - Two identical requests racing each other both missed in Redis, and the loser hit the constraint with a `500`.
+  - After 24 hours Redis forgot the key but the constraint didn't, so a retry also got a `500`.
+  - Retries used up the rate limit, and the same key with a different command type silently returned the earlier command.
+- **Decision:**
+  - A unique constraint on (issuer, idempotency key). The request that loses the race to insert reads the winner back and returns it, so every retry gets the original command.
+  - Keys never expire. Reusing a key for another vehicle or another command type returns a `409`.
+  - Redis now does only rate limiting, and that counts new commands, not retries.
+- **Ruled out:**
+  - `INSERT … ON CONFLICT`: it bypasses the JPA entity.
+  - A Postgres advisory lock: an extra round trip on every command that has a key.
+  - Keeping Redis with a reservation step: two stores that can disagree.
+- **Proof:** [`IdempotencyRaceTest`](pulse-monolith/src/test/java/com/pulse/connected/IdempotencyRaceTest.java) fires 8 identical requests at once against real Postgres. One command is created, and all 8 responses carry its id.
+
+### 3. Rollout progress is handled one event at a time per campaign
+
+- **Problem:** vehicle progress events are consumed on 3 threads. When the last updates of a stage arrived in parallel, each transaction saw the others as still running, so the stage never completed.
+- **Decision:**
+  - Each event locks its campaign row (`SELECT … FOR UPDATE`) before reading the update. Events for one campaign run one after another, while different campaigns still run in parallel.
+  - Each event costs a fixed number of queries: one count grouped by stage and status, instead of loading every update.
+  - Status changes only move forward, so a late or duplicate event can't undo a finished update.
+- **Ruled out:**
+  - Optimistic retry on every event: constant retries under load, and events could use up their retries and end in the dead-letter topic.
+  - Keying Kafka messages by campaign: vehicles would need to know their campaign, and one big rollout would be pinned to one thread.
+- **Proof:** [`RolloutConcurrencyTest`](pulse-monolith/src/test/java/com/pulse/connected/ota/RolloutConcurrencyTest.java) fires the last 5 events of a stage in parallel against real Postgres. The stage advances exactly once, and stage 2 gets exactly 5 vehicles.
+
+### 4. Each scheduled job runs once across replicas
+
+- **Problem:** with 2 replicas, every `@Scheduled` job ran twice. Two outbox resubmission runs would send duplicate Kafka messages.
+- **Decision:** [ShedLock](https://github.com/lukas-krecan/ShedLock), with the locks in Postgres and the database's clock. Each of the six jobs takes its lock row first, and a replica that finds the row taken skips that run.
+- **Ruled out:**
+  - Hand-written advisory locks: custom code instead of a well-known library.
+  - Electing one leader instance: heavy for six small jobs, and a stuck leader stops all of them.
+- **Proof:**
+  - [`SchedulerLockTest`](pulse-monolith/src/test/java/com/pulse/connected/SchedulerLockTest.java) shows that a second run at the same time is skipped while the first holds the lock.
+  - [`ScheduledJobLockCoverageTest`](pulse-monolith/src/test/java/com/pulse/connected/ScheduledJobLockCoverageTest.java) fails the build if a new `@Scheduled` method has no lock.
+
+### 5. Live updates reach every pod, in order
+
+- **Problem:** two separate bugs.
+  - Each pod's STOMP broker is in memory, so an update reached only the browsers connected to the pod that handled the Kafka event.
+  - Spring sends to each browser through a thread pool, so even on a single pod two updates could arrive swapped. A command could then show `SENT` after it was already `ACKNOWLEDGED`.
+- **Decision:**
+  - Every pod publishes its updates to a Redis channel, and delivers the other pods' updates to its own browsers one at a time.
+  - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and commands and rollouts never wait for Redis.
+  - The broker is set to preserve publish order.
+  - The app starts even when Redis is down, and subscribes once Redis is back.
+- **Ruled out:**
+  - A STOMP relay to RabbitMQ: a new broker for one feature.
+  - A Kafka topic that every instance reads: a consumer group per instance, and stale groups to clean up.
+- **Proof:** [`LiveUpdatesAcrossInstancesTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesAcrossInstancesTest.java) starts a second real app instance and checks four things:
+  - an update published on one instance reaches clients on both, once each;
+  - 100 updates arrive on the other instance in order;
+  - 5000 updates on a single instance arrive in order;
+  - an instance starts without Redis.
+
+### 6. DTOs are records, and tests pin their JSON
+
+- **Problem:** about 1,550 lines of hand-written getters, setters and builders. Replacing them is only safe if the JSON that the dashboard and the Kafka consumers read stays exactly the same.
+- **Decision:** all 25 DTOs are Java records. Before the conversion, two tests pinned the current JSON and passed on the old classes. After it, they passed unchanged on the records.
+- **Ruled out:**
+  - Keeping builders on the biggest records: the boilerplate comes back.
+  - Lombok: a new dependency the project had avoided.
+- **Proof:**
+  - [`DtoJsonContractTest`](pulse-monolith/src/test/java/com/pulse/connected/DtoJsonContractTest.java) reads every DTO from JSON, writes it back, and compares the two exactly.
+  - [`ResponseMappingContractTest`](pulse-monolith/src/test/java/com/pulse/connected/ResponseMappingContractTest.java) runs each mapper with a different value in every field, so two arguments of the same type passed in the wrong order make it fail.
+
+---
+
 ## 🚀 Key Capabilities
 
 - **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real time over STOMP WebSockets. A vehicle is marked offline after 60s without a heartbeat; commands for offline vehicles are queued and flushed when it reconnects. Queued commands expire after 15 minutes, so a stale `UNLOCK` never fires hours later, and dispatched commands time out 60s after they were sent. Late or duplicate results never reopen a finished command. All limits are configurable (`pulse.connectivity.*`, `pulse.commands.*`).
