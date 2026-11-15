@@ -1,5 +1,6 @@
 package com.pulse.connected.vehicle;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,6 +28,8 @@ class VehicleConnectivityMonitor {
     }
 
     @Scheduled(fixedDelayString = "${pulse.connectivity.check-interval-ms:15000}")
+    @SchedulerLock(name = "connectivity-offline-check",
+            lockAtLeastFor = "#{${pulse.connectivity.check-interval-ms:15000} * 8 / 10}")
     @Transactional
     public void markSilentVehiclesOffline() {
         int marked = vehicleRepository.markOnlineVehiclesOfflineLastSeenBefore(

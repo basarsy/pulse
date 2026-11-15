@@ -1,5 +1,6 @@
 package com.pulse.connected.messaging;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,11 +37,16 @@ class OutboxMaintenance {
     }
 
     @Scheduled(fixedDelayString = "${pulse.outbox.resubmit-interval-ms:60000}")
+    @SchedulerLock(name = "outbox-resubmit", lockAtLeastFor = "#{${pulse.outbox.resubmit-interval-ms:60000} * 8 / 10}")
     void resubmitFailedPublications() {
         incomplete.resubmitIncompletePublicationsOlderThan(retryAfter);
     }
 
     @Scheduled(fixedDelayString = "${pulse.outbox.purge-interval-ms:3600000}")
+    // lockAtLeastFor (48 min by default) must not exceed lockAtMostFor, so this one holds up to its interval.
+    @SchedulerLock(name = "outbox-purge",
+            lockAtLeastFor = "#{${pulse.outbox.purge-interval-ms:3600000} * 8 / 10}",
+            lockAtMostFor = "${pulse.outbox.purge-interval-ms:3600000}")
     void purgeCompletedPublications() {
         completed.deletePublicationsOlderThan(retention);
         log.debug("Purged completed outbox publications older than {}", retention);
