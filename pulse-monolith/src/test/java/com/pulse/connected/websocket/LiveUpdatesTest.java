@@ -10,6 +10,12 @@ import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.connection.DefaultMessage;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -23,7 +29,10 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -177,5 +186,62 @@ class LiveUpdatesTest {
         String body = """
                 {"origin":"%s","destination":"%s","payload":{"status":"SENT"}}""".formatted(origin, destination);
         return new DefaultMessage(CHANNEL.getBytes(StandardCharsets.UTF_8), body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    // --- after-commit delivery ---
+
+    private final TransactionTemplate tx = new TransactionTemplate(new NoOpTransactionManager());
+
+    @Test
+    void insideTransaction_SendsOnlyAfterCommit_InOrder() {
+        tx.executeWithoutResult(status -> {
+            liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 1));
+            liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 2));
+            verify(local, never()).convertAndSend(anyString(), any(Object.class));
+        });
+
+        var order = inOrder(local);
+        order.verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", 1));
+        order.verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", 2));
+        verify(redis, timeout(2000).times(2)).convertAndSend(eq(CHANNEL), anyString());
+    }
+
+    @Test
+    void insideTransaction_RollbackSendsNothing() {
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            liveUpdates.publish("/topic/rollouts/r1", Map.of("status", "COMPLETED"));
+            throw new IllegalStateException("commit fails");
+        })).isInstanceOf(IllegalStateException.class);
+
+        verify(local, never()).convertAndSend(anyString(), any(Object.class));
+        verify(redis, after(300).never()).convertAndSend(anyString(), anyString());
+    }
+
+    @Test
+    void outsideTransaction_SendsImmediately() {
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("status", "SENT"));
+
+        verify(local).convertAndSend("/topic/rollouts/r1", Map.of("status", "SENT"));
+    }
+
+    @Test
+    void publishFromAnotherAfterCommitCallback_StillSends() {
+        tx.executeWithoutResult(status -> TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 2));
+                    }
+                }));
+
+        verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", 2));
+    }
+
+    /** Runs the real transaction-synchronization lifecycle without a database. */
+    private static final class NoOpTransactionManager extends AbstractPlatformTransactionManager {
+        @Override protected Object doGetTransaction() { return new Object(); }
+        @Override protected void doBegin(Object transaction, TransactionDefinition definition) { }
+        @Override protected void doCommit(DefaultTransactionStatus status) { }
+        @Override protected void doRollback(DefaultTransactionStatus status) { }
     }
 }

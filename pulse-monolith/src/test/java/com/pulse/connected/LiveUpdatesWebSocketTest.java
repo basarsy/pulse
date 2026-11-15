@@ -1,7 +1,9 @@
 package com.pulse.connected;
 
+import com.pulse.connected.websocket.LiveUpdates;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
@@ -9,6 +11,8 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
@@ -83,6 +87,39 @@ class LiveUpdatesWebSocketTest extends AbstractIntegrationTest {
             }
             assertThat(statuses).contains("COMPLETED");
         });
+    }
+
+    @Autowired
+    private LiveUpdates liveUpdates;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @Test
+    void updatePublishedInARolledBackTransaction_NeverReachesTheBrowser() throws Exception {
+        String token = registerAndGetToken("ws-rollback");
+        String vehicleId = createVehicle(token);
+        String topic = "/topic/vehicles/" + vehicleId + "/commands";
+        BlockingQueue<Map<String, Object>> updates = new LinkedBlockingQueue<>();
+        connect(token).subscribe(topic, collectInto(updates));
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        // The subscription is live once a committed update gets through.
+        await().atMost(TIMEOUT).until(() -> {
+            tx.executeWithoutResult(status -> liveUpdates.publish(topic, Map.of("step", "ready")));
+            return updates.poll(200, TimeUnit.MILLISECONDS) != null;
+        });
+        updates.clear();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            liveUpdates.publish(topic, Map.of("step", "rolled-back"));
+            throw new IllegalStateException("commit fails");
+        })).isInstanceOf(IllegalStateException.class);
+        tx.executeWithoutResult(status -> liveUpdates.publish(topic, Map.of("step", "committed")));
+
+        Map<String, Object> next = updates.poll(10, TimeUnit.SECONDS);
+        assertThat(next).containsEntry("step", "committed");
+        assertThat(updates.poll(500, TimeUnit.MILLISECONDS)).isNull();
     }
 
     @Test
