@@ -204,6 +204,9 @@ sequenceDiagram
 
 ## 📌 Development Roadmap & Progress
 
+<details>
+<summary><b>Done: phases 0–10</b>, from the first scaffold to horizontal scaling and records (click to expand)</summary>
+
 - [x] **Phase 0 — Project Setup & Baseline**
   - Spring Boot 3.3.5 scaffold & Java 21 baseline
   - Flyway database migrations
@@ -255,10 +258,20 @@ sequenceDiagram
   - Live updates shared between pods over Redis pub/sub, so a browser gets an update whichever pod produced it, once and in order. Sending to Redis happens off the request thread: if Redis is down or slow, cross-pod updates are dropped and counted rather than slowing rollouts or commands
   - Outbox no longer republishes every incomplete event on startup (the locked resubmit job retries instead)
   - Kubernetes runs 2 app replicas; a two-instance integration test proves cross-pod delivery
+- [x] **Phase 10 — Correctness & code quality**
+  - Rollout stages and the failure threshold are validated on create (`400` naming the problem)
+  - Parallel OTA progress events are serialised per campaign with a row lock, and each event costs a fixed number of queries
+  - All 25 DTOs are Java records; `DtoJsonContractTest` and `ResponseMappingContractTest` pin their JSON
+  - README: design decisions, each linked to the test that proves it
+
+</details>
+
 - [ ] **Next**
   - Device authentication for vehicles (mTLS / device credentials)
   - Grafana provisioning for the Kubernetes manifests (currently Docker Compose only) and alert rules (outbox backlog, dead letters)
   - Browser end-to-end tests for the dashboard (Playwright)
+  - Redis password and a NetworkPolicy in the Kubernetes manifests (Redis is open inside the cluster today)
+  - Move CI and the dashboard image off Node 20, which is end-of-life
 
 ---
 
