@@ -34,14 +34,14 @@ public class VehicleService {
 
     @Transactional
     public VehicleResponse registerVehicle(CreateVehicleRequest request, User currentUser) {
-        if (vehicleRepository.existsByVin(request.getVin().toUpperCase())) {
-            throw new DuplicateResourceException("Vehicle with VIN '" + request.getVin() + "' already exists");
+        if (vehicleRepository.existsByVin(request.vin().toUpperCase())) {
+            throw new DuplicateResourceException("Vehicle with VIN '" + request.vin() + "' already exists");
         }
 
         Vehicle vehicle = Vehicle.builder()
-                .vin(request.getVin().toUpperCase())
-                .model(request.getModel())
-                .modelYear(request.getModelYear())
+                .vin(request.vin().toUpperCase())
+                .model(request.model())
+                .modelYear(request.modelYear())
                 .owner(currentUser)
                 .connectivityState(ConnectivityState.OFFLINE)
                 .currentSoftwareVersion("1.0.0")
@@ -79,8 +79,8 @@ public class VehicleService {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with ID: " + vehicleId));
 
-        User familyUser = userRepository.findByEmail(request.getUserEmail().toLowerCase())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + request.getUserEmail()));
+        User familyUser = userRepository.findByEmail(request.userEmail().toLowerCase())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + request.userEmail()));
 
         if (vehicle.getOwner() != null && vehicle.getOwner().getId().equals(familyUser.getId())) {
             throw new IllegalArgumentException("User is already the owner of this vehicle");
@@ -90,28 +90,27 @@ public class VehicleService {
         Vehicle updated = vehicleRepository.save(vehicle);
         
         UUID actorId = vehicle.getOwner() != null ? vehicle.getOwner().getId() : null;
-        auditLogService.log(actorId, "VEHICLE_AUTHORIZED", "Vehicle", vehicleId.toString(), Map.of("authorizedUserEmail", request.getUserEmail()));
+        auditLogService.log(actorId, "VEHICLE_AUTHORIZED", "Vehicle", vehicleId.toString(), Map.of("authorizedUserEmail", request.userEmail()));
         
         return mapToResponse(updated);
     }
 
     public VehicleResponse mapToResponse(Vehicle vehicle) {
-        return VehicleResponse.builder()
-                .id(vehicle.getId())
-                .vin(vehicle.getVin())
-                .model(vehicle.getModel())
-                .modelYear(vehicle.getModelYear())
-                .ownerId(vehicle.getOwner() != null ? vehicle.getOwner().getId() : null)
-                .ownerEmail(vehicle.getOwner() != null ? vehicle.getOwner().getEmail() : null)
-                .authorizedUserIds(vehicle.getAuthorizedUsers().stream().map(User::getId).collect(Collectors.toSet()))
-                .connectivityState(vehicle.getConnectivityState())
-                .currentSoftwareVersion(vehicle.getCurrentSoftwareVersion())
-                .lastSeenAt(vehicle.getLastSeenAt())
-                .batteryOrFuelLevel(vehicle.getBatteryOrFuelLevel())
-                .odometerKm(vehicle.getOdometerKm())
-                .lastLat(vehicle.getLastLat())
-                .lastLng(vehicle.getLastLng())
-                .createdAt(vehicle.getCreatedAt())
-                .build();
+        return new VehicleResponse(
+                vehicle.getId(),
+                vehicle.getVin(),
+                vehicle.getModel(),
+                vehicle.getModelYear(),
+                vehicle.getOwner() != null ? vehicle.getOwner().getId() : null,
+                vehicle.getOwner() != null ? vehicle.getOwner().getEmail() : null,
+                vehicle.getAuthorizedUsers().stream().map(User::getId).collect(Collectors.toSet()),
+                vehicle.getConnectivityState(),
+                vehicle.getCurrentSoftwareVersion(),
+                vehicle.getLastSeenAt(),
+                vehicle.getBatteryOrFuelLevel(),
+                vehicle.getOdometerKm(),
+                vehicle.getLastLat(),
+                vehicle.getLastLng(),
+                vehicle.getCreatedAt());
     }
 }

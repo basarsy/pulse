@@ -30,15 +30,14 @@ public class TelemetryController {
     @PostMapping
     @PreAuthorize("@vehicleSecurityService.hasAccess(#id, principal)")
     public ResponseEntity<Void> ingestTelemetry(@PathVariable("id") UUID id, @RequestBody IngestTelemetryRequest request) {
-        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder()
-                .vehicleId(id)
-                .batteryOrFuelLevel(request.getBatteryOrFuelLevel())
-                .odometerKm(request.getOdometerKm())
-                .engineTempC(request.getEngineTempC())
-                .lat(request.getLat())
-                .lng(request.getLng())
-                .timestamp(Instant.now())
-                .build();
+        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
+                id,
+                request.batteryOrFuelLevel(),
+                request.odometerKm(),
+                request.engineTempC(),
+                request.lat(),
+                request.lng(),
+                Instant.now());
 
         telemetryService.ingestTelemetry(event);
         return ResponseEntity.accepted().build();

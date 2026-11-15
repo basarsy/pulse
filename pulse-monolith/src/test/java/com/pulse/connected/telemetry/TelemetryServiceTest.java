@@ -52,15 +52,14 @@ class TelemetryServiceTest {
 
     @Test
     void ingestTelemetry_savesSnapshotAndUpdatesVehicle() {
-        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder()
-                .vehicleId(vehicleId)
-                .batteryOrFuelLevel(85.5)
-                .odometerKm(12000.0)
-                .engineTempC(90.0)
-                .lat(48.1351)
-                .lng(11.5820)
-                .timestamp(Instant.now())
-                .build();
+        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
+                vehicleId,
+                85.5,
+                12000.0,
+                90.0,
+                48.1351,
+                11.5820,
+                Instant.now());
 
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
 
@@ -76,7 +75,7 @@ class TelemetryServiceTest {
         assertEquals(90.0, savedSnapshot.getEngineTempC());
         assertEquals(48.1351, savedSnapshot.getLat());
         assertEquals(11.5820, savedSnapshot.getLng());
-        assertEquals(event.getTimestamp(), savedSnapshot.getRecordedAt());
+        assertEquals(event.timestamp(), savedSnapshot.getRecordedAt());
 
         ArgumentCaptor<Vehicle> vehicleCaptor = ArgumentCaptor.forClass(Vehicle.class);
         verify(vehicleRepository).save(vehicleCaptor.capture());
@@ -98,10 +97,14 @@ class TelemetryServiceTest {
     @Test
     void ingestTelemetry_lastSeenAtUsesServerClock() {
         Instant vehicleClock = Instant.now().plus(java.time.Duration.ofDays(1));
-        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder()
-                .vehicleId(vehicleId)
-                .timestamp(vehicleClock)
-                .build();
+        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
+                vehicleId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                vehicleClock);
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
 
         Instant before = Instant.now();
@@ -119,7 +122,14 @@ class TelemetryServiceTest {
 
     @Test
     void ingestTelemetry_missingTimestamp_stillMarksVehicleSeen() {
-        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder().vehicleId(vehicleId).build();
+        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
+                vehicleId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
 
         telemetryService.ingestTelemetry(event);
@@ -129,9 +139,14 @@ class TelemetryServiceTest {
 
     @Test
     void ingestTelemetry_vehicleNotFound_throwsException() {
-        VehicleTelemetryEvent event = VehicleTelemetryEvent.builder()
-                .vehicleId(vehicleId)
-                .build();
+        VehicleTelemetryEvent event = new VehicleTelemetryEvent(
+                vehicleId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
 
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.empty());
 
@@ -161,14 +176,14 @@ class TelemetryServiceTest {
         TelemetrySnapshotResponse response = telemetryService.getLatestSnapshot(vehicleId);
 
         assertNotNull(response);
-        assertEquals(snapshot.getId(), response.getId());
-        assertEquals(vehicleId, response.getVehicleId());
-        assertEquals(50.0, response.getBatteryOrFuelLevel());
-        assertEquals(100.0, response.getOdometerKm());
-        assertEquals(85.0, response.getEngineTempC());
-        assertEquals(1.0, response.getLat());
-        assertEquals(2.0, response.getLng());
-        assertEquals(now, response.getRecordedAt());
+        assertEquals(snapshot.getId(), response.id());
+        assertEquals(vehicleId, response.vehicleId());
+        assertEquals(50.0, response.batteryOrFuelLevel());
+        assertEquals(100.0, response.odometerKm());
+        assertEquals(85.0, response.engineTempC());
+        assertEquals(1.0, response.lat());
+        assertEquals(2.0, response.lng());
+        assertEquals(now, response.recordedAt());
     }
 
     @Test

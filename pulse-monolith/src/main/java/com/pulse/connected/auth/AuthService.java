@@ -31,81 +31,63 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new DuplicateResourceException("Email '" + request.getEmail() + "' is already registered");
+        if (userRepository.existsByEmail(request.email())) {
+            throw new DuplicateResourceException("Email '" + request.email() + "' is already registered");
         }
 
         // Self-registration always yields an OWNER; privileged roles are never caller-controlled.
         User user = User.builder()
-                .email(request.getEmail().toLowerCase())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .fullName(request.getFullName())
+                .email(request.email().toLowerCase())
+                .passwordHash(passwordEncoder.encode(request.password()))
+                .fullName(request.fullName())
                 .roles(new HashSet<>(Set.of(Role.OWNER)))
                 .build();
 
         User savedUser = userRepository.save(user);
         auditLogService.log(savedUser.getId(), "USER_REGISTERED", "User", savedUser.getId().toString(), null);
-        String accessToken = jwtService.generateAccessToken(savedUser);
-        String refreshToken = jwtService.generateRefreshToken(savedUser);
 
-        return AuthResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .tokenType("Bearer")
-                .expiresInMs(jwtService.getExpirationMs())
-                .user(mapToUserResponse(savedUser))
-                .build();
+        return issueTokens(savedUser);
     }
 
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail().toLowerCase())
+        User user = userRepository.findByEmail(request.email().toLowerCase())
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BadCredentialsException("Invalid email or password");
         }
         
         auditLogService.log(user.getId(), "USER_LOGIN", "User", user.getId().toString(), null);
 
-        String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
-
-        return AuthResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .tokenType("Bearer")
-                .expiresInMs(jwtService.getExpirationMs())
-                .user(mapToUserResponse(user))
-                .build();
+        return issueTokens(user);
     }
 
     public AuthResponse refreshToken(RefreshTokenRequest request) {
-        String refreshToken = request.getRefreshToken();
+        String refreshToken = request.refreshToken();
         UUID userId = jwtService.parseRefreshToken(refreshToken)
                 .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        String newAccessToken = jwtService.generateAccessToken(user);
-        String newRefreshToken = jwtService.generateRefreshToken(user);
+        return issueTokens(user);
+    }
 
-        return AuthResponse.builder()
-                .accessToken(newAccessToken)
-                .refreshToken(newRefreshToken)
-                .tokenType("Bearer")
-                .expiresInMs(jwtService.getExpirationMs())
-                .user(mapToUserResponse(user))
-                .build();
+    private AuthResponse issueTokens(User user) {
+        return new AuthResponse(
+                jwtService.generateAccessToken(user),
+                jwtService.generateRefreshToken(user),
+                "Bearer",
+                jwtService.getExpirationMs(),
+                mapToUserResponse(user));
     }
 
     public UserResponse mapToUserResponse(User user) {
-        return UserResponse.builder()
-                .id(user.getId())
-                .email(user.getEmail())
-                .fullName(user.getFullName())
-                .roles(user.getRoles())
-                .createdAt(user.getCreatedAt())
-                .build();
+        return new UserResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getFullName(),
+                user.getRoles(),
+                user.getCreatedAt());
     }
 }

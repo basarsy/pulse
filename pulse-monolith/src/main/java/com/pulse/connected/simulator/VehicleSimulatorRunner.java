@@ -72,12 +72,7 @@ public class VehicleSimulatorRunner {
         try {
             List<Vehicle> vehicles = vehicleRepository.findAll();
             for (Vehicle vehicle : vehicles) {
-                VehicleHeartbeatEvent heartbeat = VehicleHeartbeatEvent.builder()
-                        .vehicleId(vehicle.getId())
-                        .vin(vehicle.getVin())
-                        .state(ConnectivityState.ONLINE)
-                        .timestamp(Instant.now())
-                        .build();
+                VehicleHeartbeatEvent heartbeat = new VehicleHeartbeatEvent(vehicle.getId(), vehicle.getVin(), ConnectivityState.ONLINE, Instant.now());
 
                 String payload = objectMapper.writeValueAsString(heartbeat);
                 kafkaTemplate.send(KafkaTopics.VEHICLE_HEARTBEAT, vehicle.getId().toString(), payload);
@@ -193,15 +188,14 @@ public class VehicleSimulatorRunner {
                 double lat = 48.177 + (-0.01 + (0.02 * random.nextDouble()));
                 double lng = 11.556 + (-0.01 + (0.02 * random.nextDouble()));
 
-                VehicleTelemetryEvent telemetryEvent = VehicleTelemetryEvent.builder()
-                        .vehicleId(vehicle.getId())
-                        .batteryOrFuelLevel(newBatteryLevel)
-                        .odometerKm(newOdometer)
-                        .engineTempC(engineTemp)
-                        .lat(lat)
-                        .lng(lng)
-                        .timestamp(Instant.now())
-                        .build();
+                VehicleTelemetryEvent telemetryEvent = new VehicleTelemetryEvent(
+                        vehicle.getId(),
+                        newBatteryLevel,
+                        newOdometer,
+                        engineTemp,
+                        lat,
+                        lng,
+                        Instant.now());
 
                 String payload = objectMapper.writeValueAsString(telemetryEvent);
                 kafkaTemplate.send(KafkaTopics.VEHICLE_TELEMETRY, vehicle.getId().toString(), payload);

@@ -28,6 +28,6 @@ public class TelemetryKafkaConsumer {
         // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
         VehicleTelemetryEvent event = objectMapper.readValue(message, VehicleTelemetryEvent.class);
         telemetryService.ingestTelemetry(event);
-        log.debug("Consumed telemetry event for vehicle: {}", event.getVehicleId());
+        log.debug("Consumed telemetry event for vehicle: {}", event.vehicleId());
     }
 }

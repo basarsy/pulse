@@ -9,7 +9,6 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.time.LocalDateTime;
 
 @RestControllerAdvice
 @Order(1) // Higher priority than the common GlobalExceptionHandler
@@ -17,23 +16,13 @@ public class SecurityExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(BadCredentialsException ex) {
-        ErrorResponse response = ErrorResponse.builder()
-                .status(HttpStatus.UNAUTHORIZED.value())
-                .error("Unauthorized")
-                .message("Invalid email or password")
-                .timestamp(LocalDateTime.now())
-                .build();
+        ErrorResponse response = ErrorResponse.of(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
-        ErrorResponse response = ErrorResponse.builder()
-                .status(HttpStatus.FORBIDDEN.value())
-                .error("Forbidden")
-                .message("Access denied: You do not have permission to access this resource")
-                .timestamp(LocalDateTime.now())
-                .build();
+        ErrorResponse response = ErrorResponse.of(HttpStatus.FORBIDDEN, "Access denied: You do not have permission to access this resource");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 }
