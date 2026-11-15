@@ -14,6 +14,11 @@ import javax.sql.DataSource;
  * the replicas take turns through the {@code shedlock} table (V8), so a job runs once per interval
  * across all of them. Lock times come from the database clock, so replica clocks needn't agree.
  * A replica that dies mid-run holds its lock for at most {@code lockAtMostFor}.
+ *
+ * <p>Each job's lock times are derived from its interval property: {@code lockAtLeastFor} is 80% of
+ * the interval, {@code lockAtMostFor} the longer of the interval and 5 minutes (it must never be
+ * shorter). Those interval properties ({@code *-interval-ms}) must be plain milliseconds, because
+ * the lock expressions do arithmetic on them. {@code ScheduledJobLockDurationTest} covers this.
  */
 @Configuration
 @EnableSchedulerLock(defaultLockAtMostFor = "PT5M")

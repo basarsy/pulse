@@ -66,7 +66,8 @@ public class VehicleSimulatorRunner {
 
     @Scheduled(fixedRateString = "${pulse.simulator.heartbeat-interval-ms:15000}")
     @SchedulerLock(name = "simulator-heartbeats",
-            lockAtLeastFor = "#{${pulse.simulator.heartbeat-interval-ms:15000} * 8 / 10}")
+            lockAtLeastFor = "#{${pulse.simulator.heartbeat-interval-ms:15000}L * 8 / 10}",
+            lockAtMostFor = "#{T(java.lang.Math).max(${pulse.simulator.heartbeat-interval-ms:15000}L, 300000L)}")
     public void sendHeartbeats() {
         try {
             List<Vehicle> vehicles = vehicleRepository.findAll();
@@ -180,7 +181,8 @@ public class VehicleSimulatorRunner {
 
     @Scheduled(fixedRateString = "${pulse.simulator.telemetry-interval-ms:20000}")
     @SchedulerLock(name = "simulator-telemetry",
-            lockAtLeastFor = "#{${pulse.simulator.telemetry-interval-ms:20000} * 8 / 10}")
+            lockAtLeastFor = "#{${pulse.simulator.telemetry-interval-ms:20000}L * 8 / 10}",
+            lockAtMostFor = "#{T(java.lang.Math).max(${pulse.simulator.telemetry-interval-ms:20000}L, 300000L)}")
     public void emitTelemetry() {
         try {
             List<Vehicle> vehicles = vehicleRepository.findAll();

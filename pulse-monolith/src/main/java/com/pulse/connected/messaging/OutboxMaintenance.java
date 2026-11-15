@@ -37,16 +37,17 @@ class OutboxMaintenance {
     }
 
     @Scheduled(fixedDelayString = "${pulse.outbox.resubmit-interval-ms:60000}")
-    @SchedulerLock(name = "outbox-resubmit", lockAtLeastFor = "#{${pulse.outbox.resubmit-interval-ms:60000} * 8 / 10}")
+    @SchedulerLock(name = "outbox-resubmit",
+            lockAtLeastFor = "#{${pulse.outbox.resubmit-interval-ms:60000}L * 8 / 10}",
+            lockAtMostFor = "#{T(java.lang.Math).max(${pulse.outbox.resubmit-interval-ms:60000}L, 300000L)}")
     void resubmitFailedPublications() {
         incomplete.resubmitIncompletePublicationsOlderThan(retryAfter);
     }
 
     @Scheduled(fixedDelayString = "${pulse.outbox.purge-interval-ms:3600000}")
-    // lockAtLeastFor (48 min by default) must not exceed lockAtMostFor, so this one holds up to its interval.
     @SchedulerLock(name = "outbox-purge",
-            lockAtLeastFor = "#{${pulse.outbox.purge-interval-ms:3600000} * 8 / 10}",
-            lockAtMostFor = "${pulse.outbox.purge-interval-ms:3600000}")
+            lockAtLeastFor = "#{${pulse.outbox.purge-interval-ms:3600000}L * 8 / 10}",
+            lockAtMostFor = "#{T(java.lang.Math).max(${pulse.outbox.purge-interval-ms:3600000}L, 300000L)}")
     void purgeCompletedPublications() {
         completed.deletePublicationsOlderThan(retention);
         log.debug("Purged completed outbox publications older than {}", retention);

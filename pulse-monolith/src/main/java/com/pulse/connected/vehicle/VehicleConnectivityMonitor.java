@@ -29,7 +29,8 @@ class VehicleConnectivityMonitor {
 
     @Scheduled(fixedDelayString = "${pulse.connectivity.check-interval-ms:15000}")
     @SchedulerLock(name = "connectivity-offline-check",
-            lockAtLeastFor = "#{${pulse.connectivity.check-interval-ms:15000} * 8 / 10}")
+            lockAtLeastFor = "#{${pulse.connectivity.check-interval-ms:15000}L * 8 / 10}",
+            lockAtMostFor = "#{T(java.lang.Math).max(${pulse.connectivity.check-interval-ms:15000}L, 300000L)}")
     @Transactional
     public void markSilentVehiclesOffline() {
         int marked = vehicleRepository.markOnlineVehiclesOfflineLastSeenBefore(
