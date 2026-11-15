@@ -31,7 +31,9 @@ spring:
       jdbc:
         schema-initialization:
           enabled: false
-      republish-outstanding-events-on-restart: true
+      # Off: with several replicas a starting pod would re-send events another pod is still sending.
+      # The locked outbox-resubmit job (OutboxMaintenance) retries incomplete events instead.
+      republish-outstanding-events-on-restart: false
 
   data:
     redis:

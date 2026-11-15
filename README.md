@@ -131,8 +131,13 @@ flowchart LR
   - Dashboard wired to the API: vehicles, live command status, telemetry and OTA history, rollout planning and live progress; silent token refresh
   - Missing/expired tokens return 401 (so clients can refresh) and authorisation failures 403
   - Provisioned Grafana dashboard plus metrics for outbox backlog, dead letters and OTA outcomes
+- [x] **Phase 9 — Horizontal scaling**
+  - ESLint 9 for the dashboard, enforced in CI with zero warnings
+  - `@Scheduled` jobs locked with ShedLock in Postgres, so each runs once per interval across replicas
+  - Live updates shared between pods over Redis pub/sub: every browser gets every update exactly once, whichever pod produced it, and a Redis outage never slows rollouts or commands
+  - Outbox no longer republishes every incomplete event on startup (the locked resubmit job retries instead)
+  - Kubernetes runs 2 app replicas; a two-instance integration test proves cross-pod delivery
 - [ ] **Next**
-  - Make the app safe to scale out: ShedLock for `@Scheduled` jobs and an external STOMP broker relay
   - Device authentication for vehicles (mTLS / device credentials)
   - Grafana provisioning for the Kubernetes manifests (currently Docker Compose only) and alert rules (outbox backlog, dead letters)
   - Browser end-to-end tests for the dashboard (Playwright)

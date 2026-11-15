@@ -6,11 +6,13 @@ metadata:
     app: pulse
     component: pulse-app
 spec:
-  # Single replica on purpose until the app is safe to scale out:
-  #  - the STOMP broker is in-memory, so WebSocket pushes only reach clients on the same pod
-  # @Scheduled jobs are already coordinated: each takes a ShedLock row in Postgres (V8), so it
-  # runs once per interval across replicas. Scale out once live updates are shared between pods.
-  replicas: 1
+  # Safe to scale out:
+  #  - live updates: each pod's STOMP broker is in-memory, so pods share updates over Redis
+  #    pub/sub (channel pulse:live-updates) and every browser gets every update once
+  #  - @Scheduled jobs: each takes a ShedLock row in Postgres (V8) and runs once per interval
+  #  - no sticky sessions needed: the dashboard uses a raw WebSocket (one pod per connection);
+  #    the SockJS HTTP fallback transports would need them
+  replicas: 2
   selector:
     matchLabels:
       app: pulse

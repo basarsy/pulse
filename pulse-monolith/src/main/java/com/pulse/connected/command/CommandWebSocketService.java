@@ -3,7 +3,7 @@ package com.pulse.connected.command;
 import com.pulse.connected.command.dto.CommandResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import com.pulse.connected.websocket.LiveUpdates;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -13,16 +13,16 @@ public class CommandWebSocketService {
 
     private static final Logger log = LoggerFactory.getLogger(CommandWebSocketService.class);
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final LiveUpdates liveUpdates;
 
-    public CommandWebSocketService(SimpMessagingTemplate messagingTemplate) {
-        this.messagingTemplate = messagingTemplate;
+    public CommandWebSocketService(LiveUpdates liveUpdates) {
+        this.liveUpdates = liveUpdates;
     }
 
     public void notifyCommandStatusChange(UUID vehicleId, CommandResponse commandResponse) {
         String destination = "/topic/vehicles/" + vehicleId + "/commands";
         log.info("Pushing WebSocket update for command [{}] status [{}] to destination [{}]",
                 commandResponse.getId(), commandResponse.getStatus(), destination);
-        messagingTemplate.convertAndSend(destination, commandResponse);
+        liveUpdates.publish(destination, commandResponse);
     }
 }
