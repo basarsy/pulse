@@ -3,7 +3,7 @@
 ## Why
 
 Pulse runs as a single replica because every `@Scheduled` job runs on every instance
-(`k8s/app/pulse-app-deployment.yaml` says so). There are seven jobs:
+(`k8s/app/pulse-app-deployment.yaml` says so). There are six jobs:
 
 | Job | Where | Interval (default) | Effect of a second instance |
 |---|---|---|---|
@@ -35,7 +35,7 @@ instances over Redis.
   it needs no new infrastructure, and the deployment comment already plans for it.
 - *Hand-written Postgres advisory locks:* rejected. It means maintaining custom lock code to
   replace a well-known library.
-- *Electing one instance to run every job:* rejected. It's heavy for seven small jobs, and a stuck
+- *Electing one instance to run every job:* rejected. It's heavy for six small jobs, and a stuck
   leader would stop all of them.
 
 ## Design
@@ -49,10 +49,15 @@ instances over Redis.
   - a `JdbcTemplateLockProvider` bean configured with `usingDbTime()`, so the instances' clocks
     don't matter.
 - **One `@SchedulerLock` per job, each with a unique `name`** (for example `outbox-resubmit`).
-  - **`lockAtLeastFor`** is set a little shorter than the job's default interval (interval minus
-    ~2s). A second instance whose tick falls inside the same interval skips, and the owner's next
-    tick still finds the lock released.
-  - **`lockAtMostFor`** is the default unless a job needs longer.
+  - **`lockAtLeastFor`** is **80% of the job's configured interval**. It's derived from the same
+    property the `@Scheduled` interval reads, for example
+    `#{${pulse.connectivity.check-interval-ms:15000} * 8 / 10}`. A second instance whose tick falls
+    inside the same interval skips, and the owner's next tick still finds the lock released. This
+    follows the configured value, not the default, because the integration tests run the simulator
+    heartbeat every 500ms.
+  - **`lockAtMostFor`** is the default unless a job needs longer. The hourly purge needs longer:
+    it uses its own interval, because ShedLock rejects a `lockAtLeastFor` that is greater than
+    `lockAtMostFor`.
 - **Transactions:** the lock is acquired and released outside the job's own transaction. Two jobs
   are `@Transactional`: the stale-command sweep and offline detection. Their locks must still
   commit independently, which the concurrency test proves.
@@ -67,8 +72,7 @@ instances over Redis.
 
 - The simulator jobs are locked too. Without locks, a second instance doubles the simulated fleet.
 - The lock config lives in the existing `config` module, next to `MetricsConfig`.
-- `lockAtLeastFor` follows the jobs' *default* intervals. If someone sets a much shorter interval
-  through config, the job simply runs less often than that interval. Nothing breaks.
+- ShedLock **6.10.0**. ShedLock 7.x is built for Spring 7, and Boot 3.3 ships Spring 6.1.
 
 ## Left to the builder
 
