@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
@@ -28,6 +30,11 @@ class LiveUpdatesRedisConfig {
     @Bean
     RedisMessageListenerContainer liveUpdatesListenerContainer(RedisConnectionFactory connectionFactory,
                                                                RedisLiveUpdateRelay relay) {
+        return listenerContainer(connectionFactory, relay);
+    }
+
+    static RedisMessageListenerContainer listenerContainer(RedisConnectionFactory connectionFactory,
+                                                           MessageListener listener) {
         // Started by LiveUpdatesSubscriber: auto-starting it would fail the app when Redis is down.
         RedisMessageListenerContainer container = new RedisMessageListenerContainer() {
             @Override
@@ -36,7 +43,12 @@ class LiveUpdatesRedisConfig {
             }
         };
         container.setConnectionFactory(connectionFactory);
-        container.addMessageListener(relay, new ChannelTopic(RedisLiveUpdateRelay.CHANNEL));
+        // One thread, so updates reach browsers in the order they were sent. The default executor
+        // runs each message on a new thread, letting a later update overtake an earlier one.
+        SimpleAsyncTaskExecutor dispatcher = new SimpleAsyncTaskExecutor("live-updates-dispatch-");
+        dispatcher.setConcurrencyLimit(1);
+        container.setTaskExecutor(dispatcher);
+        container.addMessageListener(listener, new ChannelTopic(RedisLiveUpdateRelay.CHANNEL));
         return container;
     }
 

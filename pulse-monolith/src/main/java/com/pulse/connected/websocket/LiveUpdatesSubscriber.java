@@ -43,6 +43,11 @@ class LiveUpdatesSubscriber implements SmartLifecycle {
             try {
                 container.start();
             } catch (Exception e) {
+                // A failed start() leaves the container marked as started, so every later start()
+                // is a silent no-op. Stopping resets it, unless the subscription completed late.
+                if (!container.isListening()) {
+                    container.stop();
+                }
                 if (!warned) {
                     log.warn("Live updates from other instances are paused: cannot subscribe to Redis ({}). "
                             + "Retrying every {}.", e.getMessage(), retryInterval);

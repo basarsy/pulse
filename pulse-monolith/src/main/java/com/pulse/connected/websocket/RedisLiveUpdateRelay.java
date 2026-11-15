@@ -96,10 +96,21 @@ class RedisLiveUpdateRelay implements MessageListener, DisposableBean {
             log.warn("Dropping malformed live update envelope: {}", e.getMessage());
             return;
         }
-        if (instanceId.equals(envelope.origin()) || envelope.destination() == null) {
+        if (instanceId.equals(envelope.origin())) {
+            return;
+        }
+        // Forwarding happens after SUBSCRIBE authorisation, so only accept the live topics this
+        // relay ever sends: anything able to PUBLISH to Redis must not reach other destinations.
+        if (!isLiveTopic(envelope.destination())) {
+            log.warn("Dropping live update envelope for unexpected destination [{}]", envelope.destination());
             return;
         }
         local.convertAndSend(envelope.destination(), envelope.payload());
+    }
+
+    private static boolean isLiveTopic(String destination) {
+        return destination != null
+                && (destination.startsWith("/topic/vehicles/") || destination.startsWith("/topic/rollouts/"));
     }
 
     private void dropped(String reason, String detail) {

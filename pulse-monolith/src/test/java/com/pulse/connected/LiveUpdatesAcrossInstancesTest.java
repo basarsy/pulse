@@ -47,6 +47,7 @@ import static org.awaitility.Awaitility.await;
 class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
 
     private static final List<ConfigurableApplicationContext> INSTANCES = new CopyOnWriteArrayList<>();
+    private static ConfigurableApplicationContext instanceB;
 
     @LocalServerPort
     private int port;
@@ -68,6 +69,7 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
     static void stopInstances() {
         INSTANCES.forEach(ConfigurableApplicationContext::close);
         INSTANCES.clear();
+        instanceB = null;
     }
 
     @Test
@@ -75,9 +77,7 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         String token = registerAndGetToken("ws-multi");
         String vehicleId = createVehicle(token);
         String topic = "/topic/vehicles/" + vehicleId + "/commands";
-        ConfigurableApplicationContext b = startInstance(Map.of());
-        await().atMost(Duration.ofSeconds(10))
-                .until(() -> b.getBean(RedisMessageListenerContainer.class).isListening());
+        ConfigurableApplicationContext b = instanceB();
 
         BlockingQueue<Map<String, Object>> onA = subscribe(port, token, topic);
         BlockingQueue<Map<String, Object>> onB = subscribe(localPort(b), token, topic);
@@ -98,6 +98,47 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         assertThat(fromA).hasSize(1); // exactly once on each instance
         assertThat(fromB).hasSize(1);
         assertThat(fromB.get(0)).isEqualTo(fromA.get(0)); // same JSON, Instants and nulls included
+    }
+
+    @Test
+    void updatesKeepTheirOrderOnTheReceivingInstance() throws Exception {
+        // The dashboard keeps the last update it receives, so SENT arriving after DELIVERED on the
+        // other pod would leave a command showing SENT for good.
+        String token = registerAndGetToken("ws-order");
+        UUID vehicle = UUID.fromString(createVehicle(token));
+        BlockingQueue<Map<String, Object>> onB = subscribe(localPort(instanceB()), token,
+                "/topic/vehicles/" + vehicle + "/commands");
+        await().atMost(Duration.ofSeconds(15)).pollInterval(Duration.ofMillis(200)).until(() -> {
+            commandWebSocketService.notifyCommandStatusChange(vehicle, update(vehicle)); // probe
+            return !onB.isEmpty();
+        });
+
+        List<String> sent = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            CommandResponse update = update(vehicle);
+            sent.add(update.getId().toString());
+            commandWebSocketService.notifyCommandStatusChange(vehicle, update); // on A, back to back
+        }
+
+        List<Object> received = new ArrayList<>();
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (received.size() < sent.size() && System.nanoTime() < deadline) {
+            Map<String, Object> frame = onB.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (frame != null && sent.contains(frame.get("id"))) {
+                received.add(frame.get("id"));
+            }
+        }
+        assertThat(received).containsExactlyElementsOf(sent);
+    }
+
+    /** Instance B, shared by the tests: a second running app, subscribed to Redis. */
+    private ConfigurableApplicationContext instanceB() {
+        if (instanceB == null) {
+            instanceB = startInstance(Map.of());
+            await().atMost(Duration.ofSeconds(10))
+                    .until(() -> instanceB.getBean(RedisMessageListenerContainer.class).isListening());
+        }
+        return instanceB;
     }
 
     private static CommandResponse update(UUID vehicleId) {

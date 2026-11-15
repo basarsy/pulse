@@ -69,6 +69,7 @@ class LiveUpdatesSubscriberTest {
         await().during(Duration.ofMillis(200)).atMost(Duration.ofSeconds(1))
                 .until(() -> attempts.get() <= attemptsWhenStopped + 1);
         assertThat(subscriber.isRunning()).isFalse();
-        org.mockito.Mockito.verify(container).stop();
+        // Also called after each failed attempt, to reset the container for the next start().
+        org.mockito.Mockito.verify(container, org.mockito.Mockito.atLeastOnce()).stop();
     }
 }

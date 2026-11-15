@@ -53,21 +53,21 @@ class LiveUpdatesTest {
     void publish_DeliversLocallyAndForwardsTheEnvelope() throws Exception {
         Map<String, String> payload = Map.of("status", "SENT");
 
-        liveUpdates.publish("/topic/x", payload);
+        liveUpdates.publish("/topic/rollouts/r1", payload);
 
-        verify(local).convertAndSend("/topic/x", payload);
+        verify(local).convertAndSend("/topic/rollouts/r1", payload);
         ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
         verify(redis, timeout(2000)).convertAndSend(eq(CHANNEL), sent.capture());
         JsonNode envelope = json.readTree(sent.getValue());
         assertThat(envelope.get("origin").asText()).isEqualTo(relay.instanceId());
-        assertThat(envelope.get("destination").asText()).isEqualTo("/topic/x");
+        assertThat(envelope.get("destination").asText()).isEqualTo("/topic/rollouts/r1");
         assertThat(envelope.get("payload").get("status").asText()).isEqualTo("SENT");
     }
 
     @Test
     void forwardsInPublishOrder() throws Exception {
-        liveUpdates.publish("/topic/x", Map.of("n", 1));
-        liveUpdates.publish("/topic/x", Map.of("n", 2));
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 1));
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 2));
 
         ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
         verify(redis, timeout(2000).times(2)).convertAndSend(eq(CHANNEL), sent.capture());
@@ -80,9 +80,9 @@ class LiveUpdatesTest {
     void redisError_StillDeliversLocally_AndIsCounted() {
         when(redis.convertAndSend(anyString(), anyString())).thenThrow(new RedisConnectionFailureException("down"));
 
-        liveUpdates.publish("/topic/x", Map.of("status", "SENT"));
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("status", "SENT"));
 
-        verify(local).convertAndSend(eq("/topic/x"), any(Object.class));
+        verify(local).convertAndSend(eq("/topic/rollouts/r1"), any(Object.class));
         await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> assertThat(failures("redis_error")).isEqualTo(1));
     }
 
@@ -91,7 +91,7 @@ class LiveUpdatesTest {
         blockRedis();
 
         long start = System.nanoTime();
-        liveUpdates.publish("/topic/x", Map.of("status", "SENT"));
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("status", "SENT"));
 
         assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofMillis(200));
     }
@@ -102,28 +102,46 @@ class LiveUpdatesTest {
         liveUpdates = new LiveUpdates(local, relay);
         blockRedis();
 
-        liveUpdates.publish("/topic/x", Map.of("n", 1)); // taken by the sender, which blocks
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 1)); // taken by the sender, which blocks
         verify(redis, timeout(2000)).convertAndSend(eq(CHANNEL), anyString());
-        liveUpdates.publish("/topic/x", Map.of("n", 2)); // waits in the queue
-        liveUpdates.publish("/topic/x", Map.of("n", 3)); // queue full: dropped
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 2)); // waits in the queue
+        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 3)); // queue full: dropped
 
         assertThat(failures("queue_full")).isEqualTo(1);
     }
 
     @Test
     void ownEnvelope_IsSkipped() {
-        relay.onMessage(message(relay.instanceId(), "/topic/x"), null);
+        relay.onMessage(message(relay.instanceId(), "/topic/rollouts/r1"), null);
 
         verify(local, never()).convertAndSend(anyString(), any(Object.class));
     }
 
     @Test
     void foreignEnvelope_IsDeliveredToItsDestination() {
-        relay.onMessage(message("another-instance", "/topic/x"), null);
+        relay.onMessage(message("another-instance", "/topic/rollouts/r1"), null);
 
         ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
-        verify(local).convertAndSend(eq("/topic/x"), payload.capture());
+        verify(local).convertAndSend(eq("/topic/rollouts/r1"), payload.capture());
         assertThat(((JsonNode) payload.getValue()).get("status").asText()).isEqualTo("SENT");
+    }
+
+    @Test
+    void envelopeForADestinationOutsideTheLiveTopics_IsDropped() {
+        // Anything that can PUBLISH to Redis could otherwise push to any destination, after the
+        // SUBSCRIBE authorisation has already happened.
+        relay.onMessage(message("another-instance", "/user/queue/errors"), null);
+        relay.onMessage(message("another-instance", "/topic/anything-else"), null);
+
+        verify(local, never()).convertAndSend(anyString(), any(Object.class));
+    }
+
+    @Test
+    void envelopeForALiveTopic_IsDelivered() {
+        relay.onMessage(message("another-instance", "/topic/rollouts/" + java.util.UUID.randomUUID()), null);
+        relay.onMessage(message("another-instance", "/topic/vehicles/" + java.util.UUID.randomUUID() + "/commands"), null);
+
+        verify(local, org.mockito.Mockito.times(2)).convertAndSend(anyString(), any(Object.class));
     }
 
     @Test
@@ -138,7 +156,7 @@ class LiveUpdatesTest {
     void destroy_ShutsTheSenderDown() throws Exception {
         relay.destroy();
 
-        relay.forward("/topic/x", Map.of("status", "SENT"));
+        relay.forward("/topic/rollouts/r1", Map.of("status", "SENT"));
 
         assertThat(failures("queue_full")).isEqualTo(1);
     }
