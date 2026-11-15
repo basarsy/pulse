@@ -1,6 +1,6 @@
-import { useAuth } from '../context/AuthContext';
-import { useTopic } from '../context/LiveContext';
-import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/auth';
+import { useTopic } from '../context/live';
+import { useNotifications } from '../context/notifications';
 import { vehicleApi } from '../api/endpoints';
 import { useAsync } from '../hooks/useAsync';
 import type { Campaign, Command, Vehicle } from '../api/types';

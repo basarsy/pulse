@@ -1,5 +1,5 @@
 import React from 'react';
-import { Notification } from '../context/NotificationContext';
+import type { Notification } from '../context/notifications';
 
 export default function Toast({ notification, onClose }: { notification: Notification, onClose: () => void }) {
   return (

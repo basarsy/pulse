@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNotifications } from '../context/NotificationContext';
+import { useNotifications } from '../context/notifications';
 
 export default function NotificationBell() {
   const { unreadCount, notifications, markAllAsRead } = useNotifications();

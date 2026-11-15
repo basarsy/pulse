@@ -1,23 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import Toast from '../components/Toast';
-
-export interface Notification {
-  id: string;
-  message: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-  timestamp: Date;
-  read: boolean;
-}
-
-interface NotificationContextType {
-  notifications: Notification[];
-  unreadCount: number;
-  addNotification: (message: string, type?: Notification['type']) => void;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-}
-
-const NotificationContext = createContext<NotificationContextType>({} as NotificationContextType);
+import { NotificationContext, type Notification } from './notifications';
 
 export const NotificationProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -54,5 +37,3 @@ export const NotificationProvider: React.FC<{children: React.ReactNode}> = ({ ch
     </NotificationContext.Provider>
   );
 };
-
-export const useNotifications = () => useContext(NotificationContext);

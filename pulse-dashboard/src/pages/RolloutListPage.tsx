@@ -4,7 +4,7 @@ import Badge from '../components/Badge';
 import Button from '../components/Button';
 import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign, SoftwareVersion } from '../api/types';
-import { useTopic } from '../context/LiveContext';
+import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
 import { campaignColor, campaignProgress, label, upsertById } from '../utils/format';
 

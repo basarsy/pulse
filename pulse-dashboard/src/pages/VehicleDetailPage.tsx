@@ -4,7 +4,7 @@ import Badge from '../components/Badge';
 import Button from '../components/Button';
 import { vehicleApi } from '../api/endpoints';
 import { COMMAND_TYPES, type Command, type CommandType, type TelemetrySnapshot, type VehicleUpdate } from '../api/types';
-import { useTopic } from '../context/LiveContext';
+import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
 import { commandColor, connectivityColor, dateTime, label, num, timeAgo, updateColor, upsertById } from '../utils/format';
 
