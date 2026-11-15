@@ -49,6 +49,16 @@ say the same thing in a few lines each.
   `src/test/resources`. Request DTOs also get a test that deserializes them,
   including the missing-field defaults. The test passes on the old classes,
   then must pass unchanged on the records.
+- **Guard the mappers.** Several records have neighbouring components of
+  the same type (for example three `long` counters in `CampaignResponse`),
+  so a swapped constructor argument would still compile. The JSON test
+  builds DTOs by hand and can't catch that. Each big response is built in
+  exactly one place: `CommandService`, `RolloutCampaignService` (campaign
+  and vehicle update status), `SoftwareVersionService`, `TelemetryService`
+  and `VehicleService`. For each one, a test fills the source with a
+  different value in every field and checks that each value ends up in the
+  matching response field. Like the JSON test, it is written and passes
+  before the conversion.
 - **Defaults** (`CreateCampaignRequest.failureThresholdPercent` = 10.0,
   `CreateSoftwareVersionRequest.mandatory` = false) move into compact
   constructors. A `null` threshold becomes 10.0, and `mandatory` is a
