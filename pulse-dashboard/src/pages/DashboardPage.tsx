@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign } from '../api/types';
-import { useAuth } from '../context/AuthContext';
-import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/auth';
+import { useNotifications } from '../context/notifications';
 import { useAsync } from '../hooks/useAsync';
 import { num } from '../utils/format';
 

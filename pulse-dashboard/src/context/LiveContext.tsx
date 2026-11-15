@@ -1,18 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Client, type StompSubscription } from '@stomp/stompjs';
 import { refreshSession } from '../api/client';
 import { tokens } from '../api/tokens';
-import { useAuth } from './AuthContext';
-
-type Listener = (body: unknown) => void;
-
-interface LiveContextType {
-  connected: boolean;
-  /** Subscribes to a STOMP topic; returns an unsubscribe function. Survives reconnects. */
-  subscribe: (destination: string, listener: Listener) => () => void;
-}
-
-const LiveContext = createContext<LiveContextType>({ connected: false, subscribe: () => () => {} });
+import { useAuth } from './auth';
+import { LiveContext, type Listener } from './live';
 
 function brokerUrl() {
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -103,19 +94,3 @@ export const LiveProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return <LiveContext.Provider value={{ connected, subscribe }}>{children}</LiveContext.Provider>;
 };
-
-export const useLive = () => useContext(LiveContext);
-
-/** Subscribes to {@code destination} while mounted (no-op when it is null). */
-export function useTopic<T>(destination: string | null, onMessage: (body: T) => void) {
-  const { subscribe } = useLive();
-  const handler = useRef(onMessage);
-  handler.current = onMessage;
-
-  useEffect(() => {
-    if (!destination) {
-      return;
-    }
-    return subscribe(destination, body => handler.current(body as T));
-  }, [destination, subscribe]);
-}

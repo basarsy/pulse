@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/auth';
 import { LiveProvider } from './context/LiveContext';
 import { NotificationProvider } from './context/NotificationContext';
 import Layout from './components/Layout';

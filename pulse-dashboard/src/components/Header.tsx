@@ -1,7 +1,7 @@
 import NotificationBell from './NotificationBell';
 import Button from './Button';
-import { useAuth } from '../context/AuthContext';
-import { useLive } from '../context/LiveContext';
+import { useAuth } from '../context/auth';
+import { useLive } from '../context/live';
 import { label } from '../utils/format';
 
 export default function Header() {

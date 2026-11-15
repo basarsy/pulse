@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
 import { vehicleApi } from '../api/endpoints';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import { useAsync } from '../hooks/useAsync';
 import { connectivityColor, num, timeAgo } from '../utils/format';
 
