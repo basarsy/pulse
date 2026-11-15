@@ -10,6 +10,8 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 
+import java.time.Duration;
+
 /** Wires the Redis relay that shares live updates between instances. */
 @Configuration
 class LiveUpdatesRedisConfig {
@@ -26,9 +28,20 @@ class LiveUpdatesRedisConfig {
     @Bean
     RedisMessageListenerContainer liveUpdatesListenerContainer(RedisConnectionFactory connectionFactory,
                                                                RedisLiveUpdateRelay relay) {
-        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        // Started by LiveUpdatesSubscriber: auto-starting it would fail the app when Redis is down.
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer() {
+            @Override
+            public boolean isAutoStartup() {
+                return false;
+            }
+        };
         container.setConnectionFactory(connectionFactory);
         container.addMessageListener(relay, new ChannelTopic(RedisLiveUpdateRelay.CHANNEL));
         return container;
+    }
+
+    @Bean
+    LiveUpdatesSubscriber liveUpdatesSubscriber(RedisMessageListenerContainer liveUpdatesListenerContainer) {
+        return new LiveUpdatesSubscriber(liveUpdatesListenerContainer, Duration.ofSeconds(5));
     }
 }
