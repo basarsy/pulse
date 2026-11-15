@@ -109,7 +109,6 @@ class LiveUpdatesWebSocketTest extends AbstractIntegrationTest {
             tx.executeWithoutResult(status -> liveUpdates.publish(topic, Map.of("step", "ready")));
             return updates.poll(200, TimeUnit.MILLISECONDS) != null;
         });
-        updates.clear();
 
         assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
             liveUpdates.publish(topic, Map.of("step", "rolled-back"));
@@ -117,9 +116,16 @@ class LiveUpdatesWebSocketTest extends AbstractIntegrationTest {
         })).isInstanceOf(IllegalStateException.class);
         tx.executeWithoutResult(status -> liveUpdates.publish(topic, Map.of("step", "committed")));
 
-        Map<String, Object> next = updates.poll(10, TimeUnit.SECONDS);
-        assertThat(next).containsEntry("step", "committed");
-        assertThat(updates.poll(500, TimeUnit.MILLISECONDS)).isNull();
+        // Late "ready" messages may still arrive; everything up to "committed" must skip "rolled-back".
+        List<Object> steps = new ArrayList<>();
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            Map<String, Object> update = updates.poll(100, TimeUnit.MILLISECONDS);
+            if (update != null) {
+                steps.add(update.get("step"));
+            }
+            assertThat(steps).contains("committed");
+        });
+        assertThat(steps).doesNotContain("rolled-back");
     }
 
     @Test

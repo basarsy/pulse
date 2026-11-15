@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -237,11 +238,62 @@ class LiveUpdatesTest {
         verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", 2));
     }
 
-    /** Runs the real transaction-synchronization lifecycle without a database. */
+    @Test
+    void requiresNewInsideATransaction_SendsOnItsOwnCommit_EvenIfTheOuterRollsBack() {
+        TransactionTemplate inner = new TransactionTemplate(tx.getTransactionManager());
+        inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(outer -> {
+            liveUpdates.publish("/topic/rollouts/r1", Map.of("n", "outer"));
+            inner.executeWithoutResult(status -> liveUpdates.publish("/topic/rollouts/r1", Map.of("n", "inner")));
+            verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", "inner"));
+            throw new IllegalStateException("outer rolls back");
+        })).isInstanceOf(IllegalStateException.class);
+
+        verify(local, never()).convertAndSend("/topic/rollouts/r1", Map.of("n", "outer"));
+        assertThat(TransactionSynchronizationManager.getResourceMap()).isEmpty();
+    }
+
+    @Test
+    void publishFromAnotherAfterCompletionCallback_IsSent_AndLeavesNothingBound() {
+        tx.executeWithoutResult(status -> TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int completionStatus) {
+                        liveUpdates.publish("/topic/rollouts/r1", Map.of("n", "late"));
+                    }
+                }));
+
+        verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", "late"));
+        assertThat(TransactionSynchronizationManager.getResourceMap()).isEmpty();
+    }
+
+    @Test
+    void aFailingSend_DoesNotStopTheRestOfTheTransactionsUpdates() {
+        doThrow(new IllegalStateException("broker down")).when(local).convertAndSend("/topic/rollouts/r1", Map.of("n", 1));
+
+        tx.executeWithoutResult(status -> {
+            liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 1));
+            liveUpdates.publish("/topic/rollouts/r1", Map.of("n", 2));
+        });
+
+        verify(local).convertAndSend("/topic/rollouts/r1", Map.of("n", 2));
+    }
+
+    /**
+     * Runs the real transaction-synchronization lifecycle without a database, including suspension
+     * for REQUIRES_NEW (one flag per thread says whether a transaction is open).
+     */
     private static final class NoOpTransactionManager extends AbstractPlatformTransactionManager {
+        private static final ThreadLocal<Boolean> OPEN = ThreadLocal.withInitial(() -> false);
+
         @Override protected Object doGetTransaction() { return new Object(); }
-        @Override protected void doBegin(Object transaction, TransactionDefinition definition) { }
+        @Override protected boolean isExistingTransaction(Object transaction) { return OPEN.get(); }
+        @Override protected void doBegin(Object transaction, TransactionDefinition definition) { OPEN.set(true); }
+        @Override protected Object doSuspend(Object transaction) { OPEN.set(false); return Boolean.TRUE; }
+        @Override protected void doResume(Object transaction, Object suspendedResources) { OPEN.set(true); }
         @Override protected void doCommit(DefaultTransactionStatus status) { }
         @Override protected void doRollback(DefaultTransactionStatus status) { }
+        @Override protected void doCleanupAfterCompletion(Object transaction) { OPEN.set(false); }
     }
 }

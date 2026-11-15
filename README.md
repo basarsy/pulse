@@ -126,7 +126,7 @@ sequenceDiagram
   - A unique constraint on (issuer, idempotency key). The request that loses the race to insert reads the winner back and returns it, so a retry gets the original command instead of an error.
   - Keys never expire. Reusing a key for another vehicle or another command type returns a `409`.
   - Redis now does only rate limiting. A retry of a known key returns before the rate limit is checked, so it isn't counted; only the loser of a simultaneous race uses a slot.
-  - The rate limit fails open: while Redis is unreachable it is skipped and counted (`pulse.commands.ratelimit.skipped`), so an outage never blocks remote commands. A circuit breaker stops calling Redis after repeated failures, so commands don't each wait out the Redis timeout.
+  - The rate limit fails open: while Redis is unreachable it is skipped and counted (`pulse.commands.ratelimit.skipped`), so an outage never blocks remote commands. A circuit breaker stops calling Redis after the first few failures, so later commands don't wait out the Redis timeout (one trial call every 30s checks whether Redis is back).
 - **Ruled out:**
   - `INSERT … ON CONFLICT`: it bypasses the JPA entity.
   - A Postgres advisory lock: an extra round trip on every command that has a key.
@@ -168,7 +168,7 @@ sequenceDiagram
 - **Decision:**
   - Every pod publishes its updates to a Redis channel, and delivers the other pods' updates to its own browsers one at a time.
   - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and the code that publishes them never waits for Redis.
-  - Updates published inside a transaction are held until it commits, then sent in publish order; if it rolls back, nothing is sent.
+  - Updates published inside a transaction are held until it commits, then sent in publish order; if it rolls back, nothing is sent. A failed send is logged and the rest still go.
   - The broker is set to preserve publish order. Order holds within one transaction and one thread. Two transactions that commit a few milliseconds apart on different threads (for example two vehicles reporting progress for one campaign) or on different pods can reach a browser in either order.
   - The app starts even when Redis is down, and subscribes once Redis is back.
 - **Ruled out:**
