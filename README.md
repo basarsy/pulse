@@ -76,7 +76,7 @@ flowchart LR
 
 ## 🧭 Design decisions
 
-Each decision below lists the problem, what Pulse does, what was ruled out, and the test that proves it. The design doc for every change is in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+Each decision below lists the problem, what Pulse does, what was ruled out, and the test that proves it. Design docs for every change since the command lifecycle work (PR #4) are in [`docs/superpowers/specs/`](docs/superpowers/specs/).
 
 Most of them show up on the path of a single remote command. In Kubernetes, the request, the Kafka result and the browser's WebSocket can each land on a different pod:
 
@@ -92,16 +92,16 @@ sequenceDiagram
     participant R as Redis
     participant S as Pod holding the browser's WebSocket
     B->>A: POST /api/v1/vehicles/{id}/commands
-    A->>DB: one transaction: command row + outbox row
+    A->>DB: one transaction: command row + outbox row (online vehicle; offline ones wait in PENDING)
     A-->>B: 202 Accepted
     A->>K: after commit: vehicle.commands (retried until delivered)
     K->>V: command
     V->>K: vehicle.command-results
     K->>C: result (retried with backoff, then to the dead-letter topic)
     C->>DB: forward-only status change
-    C->>R: live update, sent off the request thread
+    C->>R: live update, queued for a background sender
     R->>S: live update
-    S->>B: STOMP /topic/vehicles/{id}/commands, in publish order
+    S->>B: STOMP /topic/vehicles/{id}/commands
 ```
 
 ### 1. Kafka sends go through a transactional outbox
@@ -111,7 +111,7 @@ sequenceDiagram
   - The service publishes an event inside its transaction. Spring Modulith stores it in the `event_publication` table in that same transaction, and a listener sends it to Kafka only after the commit.
   - A scheduled job resubmits failed publications after a minute and purges completed ones after 7 days. Delivery is therefore at least once.
   - Incoming messages are retried with exponential backoff. Malformed ones go straight to `<topic>.DLT`, so no message is dropped silently.
-- **Ruled out:** Kafka transactions. They make Kafka writes atomic with each other, not with the Postgres write.
+- **Why not Kafka transactions:** they make Kafka writes atomic with each other, not with the Postgres write.
 - **Proof:**
   - [`KafkaRoundTripTest`](pulse-monolith/src/test/java/com/pulse/connected/KafkaRoundTripTest.java) drives commands and a two-stage rollout through Kafka and the vehicle simulator, then checks that the outbox drains.
   - [`KafkaErrorHandlingTest`](pulse-monolith/src/test/java/com/pulse/connected/KafkaErrorHandlingTest.java) checks that malformed results land in the dead-letter topic.
@@ -123,9 +123,9 @@ sequenceDiagram
   - After 24 hours Redis forgot the key but the constraint didn't, so a retry also got a `500`.
   - Retries used up the rate limit, and the same key with a different command type silently returned the earlier command.
 - **Decision:**
-  - A unique constraint on (issuer, idempotency key). The request that loses the race to insert reads the winner back and returns it, so every retry gets the original command.
+  - A unique constraint on (issuer, idempotency key). The request that loses the race to insert reads the winner back and returns it, so a retry gets the original command instead of an error.
   - Keys never expire. Reusing a key for another vehicle or another command type returns a `409`.
-  - Redis now does only rate limiting, and that counts new commands, not retries.
+  - Redis now does only rate limiting. A retry of a known key returns before the rate limit is checked, so it isn't counted; only the loser of a simultaneous race uses a slot.
 - **Ruled out:**
   - `INSERT … ON CONFLICT`: it bypasses the JPA entity.
   - A Postgres advisory lock: an extra round trip on every command that has a key.
@@ -134,8 +134,9 @@ sequenceDiagram
 
 ### 3. Rollout progress is handled one event at a time per campaign
 
-- **Problem:** vehicle progress events are consumed on 3 threads. When the last updates of a stage arrived in parallel, each transaction saw the others as still running, so the stage never completed.
+- **Problem:** progress events were handled on one thread, which doesn't scale with the fleet. With more threads, the last updates of a stage race each other: each transaction misses the others' updates, so the stage never advances, or two of them both start the next stage.
 - **Decision:**
+  - Progress events are consumed on 3 threads, one per partition.
   - Each event locks its campaign row (`SELECT … FOR UPDATE`) before reading the update. Events for one campaign run one after another, while different campaigns still run in parallel.
   - Each event costs a fixed number of queries: one count grouped by stage and status, instead of loading every update.
   - Status changes only move forward, so a late or duplicate event can't undo a finished update.
@@ -146,7 +147,7 @@ sequenceDiagram
 
 ### 4. Each scheduled job runs once across replicas
 
-- **Problem:** with 2 replicas, every `@Scheduled` job ran twice. Two outbox resubmission runs would send duplicate Kafka messages.
+- **Problem:** with 2 replicas, every `@Scheduled` job would run twice, and two outbox resubmission runs would send duplicate Kafka messages. That is why the app ran as a single replica until this change.
 - **Decision:** [ShedLock](https://github.com/lukas-krecan/ShedLock), with the locks in Postgres and the database's clock. Each of the six jobs takes its lock row first, and a replica that finds the row taken skips that run.
 - **Ruled out:**
   - Hand-written advisory locks: custom code instead of a well-known library.
@@ -155,15 +156,15 @@ sequenceDiagram
   - [`SchedulerLockTest`](pulse-monolith/src/test/java/com/pulse/connected/SchedulerLockTest.java) shows that a second run at the same time is skipped while the first holds the lock.
   - [`ScheduledJobLockCoverageTest`](pulse-monolith/src/test/java/com/pulse/connected/ScheduledJobLockCoverageTest.java) fails the build if a new `@Scheduled` method has no lock.
 
-### 5. Live updates reach every pod, in order
+### 5. Live updates reach every pod, in the order each pod published them
 
 - **Problem:** two separate bugs.
   - Each pod's STOMP broker is in memory, so an update reached only the browsers connected to the pod that handled the Kafka event.
   - Spring sends to each browser through a thread pool, so even on a single pod two updates could arrive swapped. A command could then show `SENT` after it was already `ACKNOWLEDGED`.
 - **Decision:**
   - Every pod publishes its updates to a Redis channel, and delivers the other pods' updates to its own browsers one at a time.
-  - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and commands and rollouts never wait for Redis.
-  - The broker is set to preserve publish order.
+  - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and the code that publishes them never waits for Redis. (Issuing a new command still needs Redis for its rate limit; see Next.)
+  - The broker is set to preserve publish order. Order holds per publishing pod: two updates published by different pods can still reach a browser in either order.
   - The app starts even when Redis is down, and subscribes once Redis is back.
 - **Ruled out:**
   - A STOMP relay to RabbitMQ: a new broker for one feature.
@@ -177,7 +178,7 @@ sequenceDiagram
 ### 6. DTOs are records, and tests pin their JSON
 
 - **Problem:** about 1,550 lines of hand-written getters, setters and builders. Replacing them is only safe if the JSON that the dashboard and the Kafka consumers read stays exactly the same.
-- **Decision:** all 25 DTOs are Java records. Before the conversion, two tests pinned the current JSON and passed on the old classes. After it, they passed unchanged on the records.
+- **Decision:** all 25 DTOs are Java records. Before the conversion, two tests pinned the current JSON and passed on the old classes. After it, they passed on the records with their assertions unchanged.
 - **Ruled out:**
   - Keeping builders on the biggest records: the boilerplate comes back.
   - Lombok: a new dependency the project had avoided.
@@ -255,7 +256,7 @@ sequenceDiagram
 - [x] **Phase 9 — Horizontal scaling**
   - ESLint 9 for the dashboard, enforced in CI with zero warnings
   - `@Scheduled` jobs locked with ShedLock in Postgres, so each runs once per interval across replicas
-  - Live updates shared between pods over Redis pub/sub, so a browser gets an update whichever pod produced it, once and in order. Sending to Redis happens off the request thread: if Redis is down or slow, cross-pod updates are dropped and counted rather than slowing rollouts or commands
+  - Live updates shared between pods over Redis pub/sub, so while Redis is reachable a browser gets an update once, whichever pod produced it, in the order that pod published it. Sending to Redis happens off the request thread: if Redis is down or slow, cross-pod updates are dropped and counted rather than slowing rollouts or commands
   - Outbox no longer republishes every incomplete event on startup (the locked resubmit job retries instead)
   - Kubernetes runs 2 app replicas; a two-instance integration test proves cross-pod delivery
 - [x] **Phase 10 — Correctness & code quality**
@@ -272,6 +273,8 @@ sequenceDiagram
   - Browser end-to-end tests for the dashboard (Playwright)
   - Redis password and a NetworkPolicy in the Kubernetes manifests (Redis is open inside the cluster today)
   - Move CI and the dashboard image off Node 20, which is end-of-life
+  - Issuing a command needs Redis for the rate limit: with Redis down, new commands fail with a `500` instead of skipping the limit
+  - Live updates are pushed inside the database transaction, so a browser can briefly see a status that is then rolled back; push them after commit instead
 
 ---
 
@@ -358,7 +361,7 @@ docker exec pulse-postgres psql -U pulse -d pulse_db -c \
 
 Sign out and back in (or reload) to pick up the role.
 
-When the app runs from your IDE (Option B), point Prometheus at it by changing the target in `prometheus.yml` to `host.docker.internal:8080`.
+When the app runs from your IDE (Option B), start Prometheus and Grafana too (`docker compose up -d prometheus grafana`) and change the target in `prometheus.yml` to `host.docker.internal:8080`.
 
 ### Tests
 
@@ -370,7 +373,14 @@ Runs unit tests, the Spring Modulith boundary verification and the integration t
 
 ### Kubernetes
 
+The manifests use locally built images (`pulse-app:0.0.1-SNAPSHOT`, `pulse-dashboard:0.0.1-SNAPSHOT`) and an [ingress-nginx](https://kubernetes.github.io/ingress-nginx/) controller serving `pulse.local`. Build the images, make them available to your cluster, then apply:
+
 ```bash
+docker build -f pulse-monolith/Dockerfile -t pulse-app:0.0.1-SNAPSHOT .
+docker build -t pulse-dashboard:0.0.1-SNAPSHOT pulse-dashboard
+# kind: kind load docker-image pulse-app:0.0.1-SNAPSHOT pulse-dashboard:0.0.1-SNAPSHOT
+# minikube: minikube image load pulse-app:0.0.1-SNAPSHOT && minikube image load pulse-dashboard:0.0.1-SNAPSHOT
+
 cp k8s/config/secrets.env.example k8s/config/secrets.env   # then set real values
 kubectl apply -k k8s
 ```
