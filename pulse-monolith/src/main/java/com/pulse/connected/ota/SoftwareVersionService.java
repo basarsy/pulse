@@ -22,16 +22,16 @@ public class SoftwareVersionService {
 
     @Transactional
     public SoftwareVersionResponse registerSoftwareVersion(CreateSoftwareVersionRequest request) {
-        if (softwareVersionRepository.existsByVersionLabel(request.getVersionLabel())) {
-            throw new DuplicateResourceException("Software version '" + request.getVersionLabel() + "' already exists");
+        if (softwareVersionRepository.existsByVersionLabel(request.versionLabel())) {
+            throw new DuplicateResourceException("Software version '" + request.versionLabel() + "' already exists");
         }
 
         SoftwareVersion version = SoftwareVersion.builder()
-                .versionLabel(request.getVersionLabel())
-                .releaseNotes(request.getReleaseNotes())
-                .checksum(request.getChecksum())
-                .packageUrl(request.getPackageUrl())
-                .mandatory(request.isMandatory())
+                .versionLabel(request.versionLabel())
+                .releaseNotes(request.releaseNotes())
+                .checksum(request.checksum())
+                .packageUrl(request.packageUrl())
+                .mandatory(request.mandatory())
                 .build();
 
         SoftwareVersion saved = softwareVersionRepository.save(version);
@@ -53,14 +53,13 @@ public class SoftwareVersionService {
     }
 
     public SoftwareVersionResponse mapToResponse(SoftwareVersion version) {
-        return SoftwareVersionResponse.builder()
-                .id(version.getId())
-                .versionLabel(version.getVersionLabel())
-                .releaseNotes(version.getReleaseNotes())
-                .checksum(version.getChecksum())
-                .packageUrl(version.getPackageUrl())
-                .mandatory(version.isMandatory())
-                .createdAt(version.getCreatedAt())
-                .build();
+        return new SoftwareVersionResponse(
+                version.getId(),
+                version.getVersionLabel(),
+                version.getReleaseNotes(),
+                version.getChecksum(),
+                version.getPackageUrl(),
+                version.isMandatory(),
+                version.getCreatedAt());
     }
 }

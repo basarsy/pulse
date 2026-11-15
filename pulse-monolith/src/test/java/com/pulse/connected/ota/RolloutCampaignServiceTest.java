@@ -34,6 +34,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class RolloutCampaignServiceTest {
 
+    private static final SoftwareVersionResponse ANY_VERSION_RESPONSE =
+            new SoftwareVersionResponse(null, null, null, null, null, false, null);
+
     @Mock
     private RolloutCampaignRepository campaignRepository;
 
@@ -134,21 +137,32 @@ class RolloutCampaignServiceTest {
 
     @Test
     void createCampaign_Success() {
-        CreateCampaignRequest request = CreateCampaignRequest.builder()
-                .softwareVersionId(version.getId())
-                .targetModel("BMW iX xDrive50")
-                .failureThresholdPercent(15.0)
-                .stagePercentages(List.of(10, 50, 100))
-                .build();
+        CreateCampaignRequest request = new CreateCampaignRequest(version.getId(), "BMW iX xDrive50", 15.0, List.of(10, 50, 100));
 
         when(softwareVersionRepository.findById(version.getId())).thenReturn(Optional.of(version));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         CampaignResponse response = campaignService.createCampaign(request, admin);
 
         assertThat(response).isNotNull();
         verify(campaignRepository).save(any(RolloutCampaign.class));
+    }
+
+    @Test
+    void createCampaign_explicitNullThreshold_uses10() throws Exception {
+        CreateCampaignRequest request = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+                {"softwareVersionId":"%s","targetModel":"Model X","failureThresholdPercent":null}
+                """.formatted(version.getId()), CreateCampaignRequest.class);
+
+        when(softwareVersionRepository.findById(version.getId())).thenReturn(Optional.of(version));
+        when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
+
+        campaignService.createCampaign(request, admin);
+
+        ArgumentCaptor<RolloutCampaign> saved = ArgumentCaptor.forClass(RolloutCampaign.class);
+        verify(campaignRepository).save(saved.capture());
+        assertThat(saved.getValue().getFailureThresholdPercent()).isEqualTo(10.0);
     }
 
     @Test
@@ -224,7 +238,7 @@ class RolloutCampaignServiceTest {
         when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(2L);
         when(vehicleUpdateStatusRepository.findVinsOfModel(campaign.getTargetModel(), PageRequest.of(1, 1)))
                 .thenReturn(List.of());
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.executeActiveStage(campaign);
 
@@ -236,7 +250,7 @@ class RolloutCampaignServiceTest {
         when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(RolloutCampaign.class))).thenReturn(campaign);
         when(vehicleUpdateStatusRepository.countVehiclesOfModel(campaign.getTargetModel())).thenReturn(0L);
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.startCampaign(campaign.getId(), admin);
 
@@ -280,7 +294,7 @@ class RolloutCampaignServiceTest {
                 new StageStatusCount(0, UpdateStatus.INSTALLED, 2),
                 new StageStatusCount(1, UpdateStatus.DOWNLOADING, 1),
                 new StageStatusCount(1, UpdateStatus.FAILED, 1)));
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.handleVehicleUpdateProgress(progress(failing, UpdateStatus.FAILED));
 
@@ -375,7 +389,7 @@ class RolloutCampaignServiceTest {
         when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
         when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId()))
                 .thenReturn(List.of(new StageStatusCount(0, UpdateStatus.FAILED, 1)));
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         OtaUpdateProgressEvent failedEvent = new OtaUpdateProgressEvent(
                 updateStatus.getId(),
@@ -459,7 +473,7 @@ class RolloutCampaignServiceTest {
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(campaign)).thenReturn(campaign);
-        when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
+        when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
 
         campaignService.pauseCampaign(campaign.getId(), admin);
         campaignService.abortCampaign(campaign.getId(), admin);

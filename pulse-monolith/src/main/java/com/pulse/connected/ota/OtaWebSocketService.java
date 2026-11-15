@@ -23,14 +23,14 @@ public class OtaWebSocketService {
     public void notifyCampaignProgress(UUID campaignId, CampaignResponse response) {
         String destination = "/topic/rollouts/" + campaignId;
         log.info("Pushing WebSocket update for campaign [{}] status [{}] to [{}]",
-                campaignId, response.getStatus(), destination);
+                campaignId, response.status(), destination);
         liveUpdates.publish(destination, response);
     }
 
     public void notifyVehicleUpdateStatus(UUID vehicleId, VehicleUpdateStatusResponse response) {
         String destination = "/topic/vehicles/" + vehicleId + "/update-status";
         log.info("Pushing WebSocket update for vehicle [{}] OTA status [{}] to [{}]",
-                vehicleId, response.getStatus(), destination);
+                vehicleId, response.status(), destination);
         liveUpdates.publish(destination, response);
     }
 }

@@ -70,20 +70,20 @@ public class RolloutCampaignService {
 
     @Transactional
     public CampaignResponse createCampaign(CreateCampaignRequest request, User currentUser) {
-        SoftwareVersion version = softwareVersionRepository.findById(request.getSoftwareVersionId())
-                .orElseThrow(() -> new ResourceNotFoundException("Software version not found with ID: " + request.getSoftwareVersionId()));
+        SoftwareVersion version = softwareVersionRepository.findById(request.softwareVersionId())
+                .orElseThrow(() -> new ResourceNotFoundException("Software version not found with ID: " + request.softwareVersionId()));
 
-        List<Integer> stagePercentages = request.getStagePercentages();
+        List<Integer> stagePercentages = request.stagePercentages();
         if (stagePercentages == null || stagePercentages.isEmpty()) {
             stagePercentages = List.of(5, 25, 100);
         }
 
         RolloutCampaign campaign = RolloutCampaign.builder()
                 .softwareVersion(version)
-                .targetModel(request.getTargetModel())
+                .targetModel(request.targetModel())
                 .status(CampaignStatus.DRAFT)
                 .currentStageIndex(0)
-                .failureThresholdPercent(request.getFailureThresholdPercent() != null ? request.getFailureThresholdPercent() : 10.0)
+                .failureThresholdPercent(request.failureThresholdPercent() != null ? request.failureThresholdPercent() : 10.0)
                 .createdBy(currentUser)
                 .build();
 
@@ -403,44 +403,41 @@ public class RolloutCampaignService {
         long total = progress.total();
 
         List<RolloutStageResponse> stageResponses = campaign.getStages().stream()
-                .map(s -> RolloutStageResponse.builder()
-                        .id(s.getId())
-                        .percentage(s.getPercentage())
-                        .status(s.getStatus())
-                        .startedAt(s.getStartedAt())
-                        .completedAt(s.getCompletedAt())
-                        .build())
+                .map(s -> new RolloutStageResponse(
+                        s.getId(),
+                        s.getPercentage(),
+                        s.getStatus(),
+                        s.getStartedAt(),
+                        s.getCompletedAt()))
                 .collect(Collectors.toList());
 
-        return CampaignResponse.builder()
-                .id(campaign.getId())
-                .softwareVersion(softwareVersionService.mapToResponse(campaign.getSoftwareVersion()))
-                .targetModel(campaign.getTargetModel())
-                .status(campaign.getStatus())
-                .currentStageIndex(campaign.getCurrentStageIndex())
-                .failureThresholdPercent(campaign.getFailureThresholdPercent())
-                .createdByUserId(campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null)
-                .createdAt(campaign.getCreatedAt())
-                .stages(stageResponses)
-                .totalVehiclesTargeted(total)
-                .vehiclesInstalled(installed)
-                .vehiclesFailed(failed)
-                .build();
+        return new CampaignResponse(
+                campaign.getId(),
+                softwareVersionService.mapToResponse(campaign.getSoftwareVersion()),
+                campaign.getTargetModel(),
+                campaign.getStatus(),
+                campaign.getCurrentStageIndex(),
+                campaign.getFailureThresholdPercent(),
+                campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null,
+                campaign.getCreatedAt(),
+                stageResponses,
+                total,
+                installed,
+                failed);
     }
 
     public VehicleUpdateStatusResponse mapToUpdateStatusResponse(VehicleUpdateStatus status) {
-        return VehicleUpdateStatusResponse.builder()
-                .id(status.getId())
-                .vehicleId(status.getVehicle().getId())
-                .vin(status.getVehicle().getVin())
-                .campaignId(status.getCampaign().getId())
-                .targetVersionId(status.getTargetVersion().getId())
-                .targetVersionLabel(status.getTargetVersion().getVersionLabel())
-                .status(status.getStatus())
-                .progressPercent(status.getProgressPercent())
-                .startedAt(status.getStartedAt())
-                .completedAt(status.getCompletedAt())
-                .errorMessage(status.getErrorMessage())
-                .build();
+        return new VehicleUpdateStatusResponse(
+                status.getId(),
+                status.getVehicle().getId(),
+                status.getVehicle().getVin(),
+                status.getCampaign().getId(),
+                status.getTargetVersion().getId(),
+                status.getTargetVersion().getVersionLabel(),
+                status.getStatus(),
+                status.getProgressPercent(),
+                status.getStartedAt(),
+                status.getCompletedAt(),
+                status.getErrorMessage());
     }
 }
