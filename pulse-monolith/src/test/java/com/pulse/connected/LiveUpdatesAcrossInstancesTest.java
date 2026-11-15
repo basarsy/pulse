@@ -93,8 +93,8 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         CommandResponse update = update(vehicle);
         commandWebSocketService.notifyCommandStatusChange(vehicle, update); // on A
 
-        List<Map<String, Object>> fromA = framesFor(update.getId(), onA);
-        List<Map<String, Object>> fromB = framesFor(update.getId(), onB);
+        List<Map<String, Object>> fromA = framesFor(update.id(), onA);
+        List<Map<String, Object>> fromB = framesFor(update.id(), onB);
         assertThat(fromA).hasSize(1); // exactly once on each instance
         assertThat(fromB).hasSize(1);
         assertThat(fromB.get(0)).isEqualTo(fromA.get(0)); // same JSON, Instants and nulls included
@@ -116,7 +116,7 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         List<String> sent = new ArrayList<>();
         for (int i = 0; i < 100; i++) {
             CommandResponse update = update(vehicle);
-            sent.add(update.getId().toString());
+            sent.add(update.id().toString());
             commandWebSocketService.notifyCommandStatusChange(vehicle, update); // on A, back to back
         }
 
@@ -145,7 +145,7 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         List<String> sent = new ArrayList<>();
         for (int i = 0; i < 5000; i++) {
             CommandResponse update = update(vehicle);
-            sent.add(update.getId().toString());
+            sent.add(update.id().toString());
             commandWebSocketService.notifyCommandStatusChange(vehicle, update);
         }
 
@@ -171,13 +171,17 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
     }
 
     private static CommandResponse update(UUID vehicleId) {
-        return CommandResponse.builder()
-                .id(UUID.randomUUID())
-                .vehicleId(vehicleId)
-                .type(CommandType.LOCK)
-                .status(CommandStatus.SENT)
-                .requestedAt(Instant.now())
-                .build();
+        return new CommandResponse(
+                UUID.randomUUID(),
+                vehicleId,
+                null,
+                CommandType.LOCK,
+                CommandStatus.SENT,
+                Instant.now(),
+                null,
+                null,
+                null,
+                null);
     }
 
     /** Everything received in the next 3 seconds that belongs to command {@code id}. */

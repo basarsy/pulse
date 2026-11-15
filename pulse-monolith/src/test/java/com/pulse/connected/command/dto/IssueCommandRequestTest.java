@@ -29,6 +29,6 @@ class IssueCommandRequestTest {
     }
 
     private static IssueCommandRequest request(String key) {
-        return IssueCommandRequest.builder().type(CommandType.LOCK).idempotencyKey(key).build();
+        return new IssueCommandRequest(CommandType.LOCK, key);
     }
 }

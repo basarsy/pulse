@@ -29,8 +29,8 @@ public class CommandResultKafkaConsumer {
         // Exceptions propagate to the shared error handler (retry, then dead-letter topic).
         CommandResultEvent event = objectMapper.readValue(message, CommandResultEvent.class);
         log.info("Received command result for command [{}] status [{}] vehicle [{}]",
-                event.getCommandId(), event.getStatus(), event.getVehicleId());
+                event.commandId(), event.status(), event.vehicleId());
 
-        commandService.processCommandResult(event.getCommandId(), event.getVehicleId(), event.getStatus(), event.getResultMessage());
+        commandService.processCommandResult(event.commandId(), event.vehicleId(), event.status(), event.resultMessage());
     }
 }

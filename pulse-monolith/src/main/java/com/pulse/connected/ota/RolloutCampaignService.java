@@ -172,38 +172,38 @@ public class RolloutCampaignService {
         // update: events for one campaign are applied one after another, each seeing the previous
         // one's committed changes, so the last one of a stage reliably sees the stage finished
         // (no stall) and only it advances (no double start).
-        UUID campaignId = vehicleUpdateStatusRepository.findCampaignIdById(event.getUpdateStatusId())
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.getUpdateStatusId()));
+        UUID campaignId = vehicleUpdateStatusRepository.findCampaignIdById(event.updateStatusId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.updateStatusId()));
         RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
-        VehicleUpdateStatus updateStatus = vehicleUpdateStatusRepository.findById(event.getUpdateStatusId())
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.getUpdateStatusId()));
+        VehicleUpdateStatus updateStatus = vehicleUpdateStatusRepository.findById(event.updateStatusId())
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.updateStatusId()));
 
-        if (!UpdateStatusTransitions.isAllowed(updateStatus.getStatus(), event.getStatus())) {
+        if (!UpdateStatusTransitions.isAllowed(updateStatus.getStatus(), event.status())) {
             log.info("Ignoring stale OTA progress for update [{}]: {} -> {} is not allowed",
-                    updateStatus.getId(), updateStatus.getStatus(), event.getStatus());
+                    updateStatus.getId(), updateStatus.getStatus(), event.status());
             return;
         }
 
-        updateStatus.setStatus(event.getStatus());
-        updateStatus.setProgressPercent(event.getProgressPercent() != null ? event.getProgressPercent() : 0);
+        updateStatus.setStatus(event.status());
+        updateStatus.setProgressPercent(event.progressPercent() != null ? event.progressPercent() : 0);
 
-        if (event.getStatus() == UpdateStatus.DOWNLOADING && updateStatus.getStartedAt() == null) {
+        if (event.status() == UpdateStatus.DOWNLOADING && updateStatus.getStartedAt() == null) {
             updateStatus.setStartedAt(Instant.now());
         }
 
-        if (event.getStatus() == UpdateStatus.INSTALLED) {
+        if (event.status() == UpdateStatus.INSTALLED) {
             updateStatus.setCompletedAt(Instant.now());
             // Update physical vehicle software version
             Vehicle vehicle = updateStatus.getVehicle();
             vehicle.setCurrentSoftwareVersion(updateStatus.getTargetVersion().getVersionLabel());
             vehicleRepository.save(vehicle);
-        } else if (event.getStatus() == UpdateStatus.FAILED || event.getStatus() == UpdateStatus.ROLLED_BACK) {
+        } else if (event.status() == UpdateStatus.FAILED || event.status() == UpdateStatus.ROLLED_BACK) {
             updateStatus.setCompletedAt(Instant.now());
-            updateStatus.setErrorMessage(event.getErrorMessage() != null ? event.getErrorMessage() : "Installation failed");
+            updateStatus.setErrorMessage(event.errorMessage() != null ? event.errorMessage() : "Installation failed");
         }
         if (updateStatus.isFinished()) {
-            meterRegistry.counter("pulse.ota.updates.finished", "result", event.getStatus().name()).increment();
+            meterRegistry.counter("pulse.ota.updates.finished", "result", event.status().name()).increment();
         }
 
         VehicleUpdateStatus savedStatus = vehicleUpdateStatusRepository.save(updateStatus);
@@ -271,15 +271,14 @@ public class RolloutCampaignService {
                     .progressPercent(0)
                     .build());
 
-            OtaInstructionEvent instruction = OtaInstructionEvent.builder()
-                    .updateStatusId(savedStatus.getId())
-                    .vehicleId(vehicle.getId())
-                    .campaignId(campaign.getId())
-                    .targetVersionId(campaign.getSoftwareVersion().getId())
-                    .targetVersionLabel(campaign.getSoftwareVersion().getVersionLabel())
-                    .packageUrl(campaign.getSoftwareVersion().getPackageUrl())
-                    .checksum(campaign.getSoftwareVersion().getChecksum())
-                    .build();
+            OtaInstructionEvent instruction = new OtaInstructionEvent(
+                    savedStatus.getId(),
+                    vehicle.getId(),
+                    campaign.getId(),
+                    campaign.getSoftwareVersion().getId(),
+                    campaign.getSoftwareVersion().getVersionLabel(),
+                    campaign.getSoftwareVersion().getPackageUrl(),
+                    campaign.getSoftwareVersion().getChecksum());
 
             // Recorded in the outbox with this transaction; sent to Kafka after commit (OtaKafkaRelay).
             eventPublisher.publishEvent(instruction);

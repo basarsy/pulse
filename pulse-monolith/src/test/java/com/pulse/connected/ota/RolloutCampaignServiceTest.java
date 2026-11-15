@@ -165,7 +165,7 @@ class RolloutCampaignServiceTest {
         // Stage 1 is 50% of two vehicles: exactly one instruction, to the first vehicle by VIN.
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle1.getId());
+        assertThat(sent.getValue().vehicleId()).isEqualTo(vehicle1.getId());
     }
 
     @Test
@@ -181,7 +181,7 @@ class RolloutCampaignServiceTest {
 
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        assertThat(sent.getValue().vehicleId()).isEqualTo(vehicle2.getId());
     }
 
     @Test
@@ -196,7 +196,7 @@ class RolloutCampaignServiceTest {
 
         ArgumentCaptor<OtaInstructionEvent> sent = ArgumentCaptor.forClass(OtaInstructionEvent.class);
         verify(eventPublisher).publishEvent(sent.capture());
-        assertThat(sent.getValue().getVehicleId()).isEqualTo(vehicle2.getId());
+        assertThat(sent.getValue().vehicleId()).isEqualTo(vehicle2.getId());
         verify(vehicleUpdateStatusRepository).findVehiclesToInstruct(
                 campaign.getId(), campaign.getTargetModel(), vehicle2.getVin(), version.getVersionLabel());
     }
@@ -339,13 +339,14 @@ class RolloutCampaignServiceTest {
     }
 
     private OtaUpdateProgressEvent progress(VehicleUpdateStatus update, UpdateStatus status) {
-        return OtaUpdateProgressEvent.builder()
-                .updateStatusId(update.getId())
-                .vehicleId(update.getVehicle().getId())
-                .campaignId(campaign.getId())
-                .status(status)
-                .progressPercent(50)
-                .build();
+        return new OtaUpdateProgressEvent(
+                update.getId(),
+                update.getVehicle().getId(),
+                campaign.getId(),
+                status,
+                50,
+                null,
+                null);
     }
 
     private static Answer<VehicleUpdateStatus> saved() {
@@ -376,13 +377,14 @@ class RolloutCampaignServiceTest {
                 .thenReturn(List.of(new StageStatusCount(0, UpdateStatus.FAILED, 1)));
         when(softwareVersionService.mapToResponse(version)).thenReturn(new SoftwareVersionResponse());
 
-        OtaUpdateProgressEvent failedEvent = OtaUpdateProgressEvent.builder()
-                .updateStatusId(updateStatus.getId())
-                .vehicleId(vehicle1.getId())
-                .campaignId(campaign.getId())
-                .status(UpdateStatus.FAILED)
-                .errorMessage("ECU checksum mismatch")
-                .build();
+        OtaUpdateProgressEvent failedEvent = new OtaUpdateProgressEvent(
+                updateStatus.getId(),
+                vehicle1.getId(),
+                campaign.getId(),
+                UpdateStatus.FAILED,
+                null,
+                "ECU checksum mismatch",
+                null);
 
         campaignService.handleVehicleUpdateProgress(failedEvent);
 
@@ -438,8 +440,14 @@ class RolloutCampaignServiceTest {
     void progressEvent_UnknownUpdate_NotFound() {
         UUID unknown = UUID.randomUUID();
         when(vehicleUpdateStatusRepository.findCampaignIdById(unknown)).thenReturn(Optional.empty());
-        OtaUpdateProgressEvent event = OtaUpdateProgressEvent.builder()
-                .updateStatusId(unknown).vehicleId(vehicle1.getId()).status(UpdateStatus.INSTALLED).build();
+        OtaUpdateProgressEvent event = new OtaUpdateProgressEvent(
+                unknown,
+                vehicle1.getId(),
+                null,
+                UpdateStatus.INSTALLED,
+                null,
+                null,
+                null);
 
         assertThatThrownBy(() -> campaignService.handleVehicleUpdateProgress(event))
                 .isInstanceOf(ResourceNotFoundException.class);

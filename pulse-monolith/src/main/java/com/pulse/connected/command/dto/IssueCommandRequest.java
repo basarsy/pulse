@@ -4,42 +4,10 @@ import com.pulse.connected.domain.CommandType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-public class IssueCommandRequest {
+public record IssueCommandRequest(
+        @NotNull(message = "Command type is required")
+        CommandType type,
 
-    @NotNull(message = "Command type is required")
-    private CommandType type;
-
-    @Size(max = 100, message = "Idempotency key must be at most 100 characters")
-    private String idempotencyKey;
-
-    public IssueCommandRequest() {}
-
-    public IssueCommandRequest(CommandType type, String idempotencyKey) {
-        this.type = type;
-        this.idempotencyKey = idempotencyKey;
-    }
-
-    public static IssueCommandRequestBuilder builder() {
-        return new IssueCommandRequestBuilder();
-    }
-
-    public CommandType getType() { return type; }
-    public void setType(CommandType type) { this.type = type; }
-
-    public String getIdempotencyKey() { return idempotencyKey; }
-    public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
-
-    public static class IssueCommandRequestBuilder {
-        private CommandType type;
-        private String idempotencyKey;
-
-        IssueCommandRequestBuilder() {}
-
-        public IssueCommandRequestBuilder type(CommandType type) { this.type = type; return this; }
-        public IssueCommandRequestBuilder idempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; return this; }
-
-        public IssueCommandRequest build() {
-            return new IssueCommandRequest(type, idempotencyKey);
-        }
-    }
+        @Size(max = 100, message = "Idempotency key must be at most 100 characters")
+        String idempotencyKey) {
 }

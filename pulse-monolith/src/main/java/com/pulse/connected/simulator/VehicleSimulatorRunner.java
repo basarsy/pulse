@@ -90,7 +90,7 @@ public class VehicleSimulatorRunner {
         try {
             VehicleCommandEvent event = objectMapper.readValue(message, VehicleCommandEvent.class);
             log.info("Simulator [Vehicle {}] received command [{}] type [{}]",
-                    event.getVehicleId(), event.getCommandId(), event.getType());
+                    event.vehicleId(), event.commandId(), event.type());
 
             // Simulate cellular latency
             int delayMs = minLatencyMs + random.nextInt(latencyJitterMs + 1);
@@ -100,21 +100,20 @@ public class VehicleSimulatorRunner {
             boolean success = random.nextDouble() >= commandFailureRate;
             CommandStatus resultStatus = success ? CommandStatus.COMPLETED : CommandStatus.FAILED;
             String resultMessage = success ?
-                    "Executed " + event.getType() + " command successfully on ECU" :
-                    "ECU returned error during execution of " + event.getType();
+                    "Executed " + event.type() + " command successfully on ECU" :
+                    "ECU returned error during execution of " + event.type();
 
-            CommandResultEvent resultEvent = CommandResultEvent.builder()
-                    .commandId(event.getCommandId())
-                    .vehicleId(event.getVehicleId())
-                    .status(resultStatus)
-                    .resultMessage(resultMessage)
-                    .timestamp(Instant.now())
-                    .build();
+            CommandResultEvent resultEvent = new CommandResultEvent(
+                    event.commandId(),
+                    event.vehicleId(),
+                    resultStatus,
+                    resultMessage,
+                    Instant.now());
 
             String resultPayload = objectMapper.writeValueAsString(resultEvent);
-            kafkaTemplate.send(KafkaTopics.VEHICLE_COMMAND_RESULTS, event.getVehicleId().toString(), resultPayload);
+            kafkaTemplate.send(KafkaTopics.VEHICLE_COMMAND_RESULTS, event.vehicleId().toString(), resultPayload);
             log.info("Simulator [Vehicle {}] published result [{}] for command [{}] after {}ms",
-                    event.getVehicleId(), resultStatus, event.getCommandId(), delayMs);
+                    event.vehicleId(), resultStatus, event.commandId(), delayMs);
 
         } catch (Exception e) {
             log.error("Simulator error handling command message: {}", message, e);
@@ -126,7 +125,7 @@ public class VehicleSimulatorRunner {
         try {
             OtaInstructionEvent instruction = objectMapper.readValue(message, OtaInstructionEvent.class);
             log.info("Simulator [Vehicle {}] starting OTA update for version [{}]",
-                    instruction.getVehicleId(), instruction.getTargetVersionLabel());
+                    instruction.vehicleId(), instruction.targetVersionLabel());
 
             // 1. Downloading 25%
             publishOtaProgress(instruction, UpdateStatus.DOWNLOADING, 25, null);
@@ -147,11 +146,11 @@ public class VehicleSimulatorRunner {
             if (success) {
                 publishOtaProgress(instruction, UpdateStatus.INSTALLED, 100, null);
                 log.info("Simulator [Vehicle {}] successfully INSTALLED version [{}]",
-                        instruction.getVehicleId(), instruction.getTargetVersionLabel());
+                        instruction.vehicleId(), instruction.targetVersionLabel());
             } else {
                 publishOtaProgress(instruction, UpdateStatus.FAILED, 50, "ECU checksum verification failed during flashing");
                 log.warn("Simulator [Vehicle {}] FAILED installing version [{}]",
-                        instruction.getVehicleId(), instruction.getTargetVersionLabel());
+                        instruction.vehicleId(), instruction.targetVersionLabel());
             }
 
         } catch (Exception e) {
@@ -160,18 +159,17 @@ public class VehicleSimulatorRunner {
     }
 
     private void publishOtaProgress(OtaInstructionEvent instruction, UpdateStatus status, int progress, String errorMessage) throws Exception {
-        OtaUpdateProgressEvent progressEvent = OtaUpdateProgressEvent.builder()
-                .updateStatusId(instruction.getUpdateStatusId())
-                .vehicleId(instruction.getVehicleId())
-                .campaignId(instruction.getCampaignId())
-                .status(status)
-                .progressPercent(progress)
-                .errorMessage(errorMessage)
-                .timestamp(Instant.now())
-                .build();
+        OtaUpdateProgressEvent progressEvent = new OtaUpdateProgressEvent(
+                instruction.updateStatusId(),
+                instruction.vehicleId(),
+                instruction.campaignId(),
+                status,
+                progress,
+                errorMessage,
+                Instant.now());
 
         String payload = objectMapper.writeValueAsString(progressEvent);
-        kafkaTemplate.send(KafkaTopics.OTA_UPDATE_STATUS, instruction.getVehicleId().toString(), payload);
+        kafkaTemplate.send(KafkaTopics.OTA_UPDATE_STATUS, instruction.vehicleId().toString(), payload);
     }
 
     @Scheduled(fixedRateString = "${pulse.simulator.telemetry-interval-ms:20000}")
