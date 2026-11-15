@@ -99,7 +99,7 @@ sequenceDiagram
     V->>K: vehicle.command-results
     K->>C: result (retried with backoff, then to the dead-letter topic)
     C->>DB: forward-only status change
-    C->>R: live update, queued for a background sender
+    C->>R: after commit: live update, queued for a background sender
     R->>S: live update
     S->>B: STOMP /topic/vehicles/{id}/commands
 ```
@@ -126,11 +126,14 @@ sequenceDiagram
   - A unique constraint on (issuer, idempotency key). The request that loses the race to insert reads the winner back and returns it, so a retry gets the original command instead of an error.
   - Keys never expire. Reusing a key for another vehicle or another command type returns a `409`.
   - Redis now does only rate limiting. A retry of a known key returns before the rate limit is checked, so it isn't counted; only the loser of a simultaneous race uses a slot.
+  - The rate limit fails open: while Redis is unreachable it is skipped and counted (`pulse.commands.ratelimit.skipped`), so an outage never blocks remote commands. A circuit breaker stops calling Redis after repeated failures, so commands don't each wait out the Redis timeout.
 - **Ruled out:**
   - `INSERT … ON CONFLICT`: it bypasses the JPA entity.
   - A Postgres advisory lock: an extra round trip on every command that has a key.
   - Keeping Redis with a reservation step: two stores that can disagree.
-- **Proof:** [`IdempotencyRaceTest`](pulse-monolith/src/test/java/com/pulse/connected/IdempotencyRaceTest.java) fires 8 identical requests at once against real Postgres. One command is created, and all 8 responses carry its id.
+- **Proof:**
+  - [`IdempotencyRaceTest`](pulse-monolith/src/test/java/com/pulse/connected/IdempotencyRaceTest.java) fires 8 identical requests at once against real Postgres. One command is created, and all 8 responses carry its id.
+  - [`LiveUpdatesAcrossInstancesTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesAcrossInstancesTest.java) starts an instance whose Redis is unreachable: 6 commands are all accepted with `202`, every skip is counted, and the breaker is open.
 
 ### 3. Rollout progress is handled one event at a time per campaign
 
@@ -156,15 +159,17 @@ sequenceDiagram
   - [`SchedulerLockTest`](pulse-monolith/src/test/java/com/pulse/connected/SchedulerLockTest.java) shows that a second run at the same time is skipped while the first holds the lock.
   - [`ScheduledJobLockCoverageTest`](pulse-monolith/src/test/java/com/pulse/connected/ScheduledJobLockCoverageTest.java) fails the build if a new `@Scheduled` method has no lock.
 
-### 5. Live updates reach every pod, in the order each pod published them
+### 5. Live updates reach every pod, and only after the commit
 
 - **Problem:** two separate bugs.
   - Each pod's STOMP broker is in memory, so an update reached only the browsers connected to the pod that handled the Kafka event.
   - Spring sends to each browser through a thread pool, so even on a single pod two updates could arrive swapped. A command could then show `SENT` after it was already `ACKNOWLEDGED`.
+  - Updates were sent inside the database transaction, so if it rolled back, a browser had already seen a state that was never saved.
 - **Decision:**
   - Every pod publishes its updates to a Redis channel, and delivers the other pods' updates to its own browsers one at a time.
-  - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and the code that publishes them never waits for Redis. (Issuing a new command still needs Redis for its rate limit; see Next.)
-  - The broker is set to preserve publish order. Order holds per publishing pod: two updates published by different pods can still reach a browser in either order.
+  - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and the code that publishes them never waits for Redis.
+  - Updates published inside a transaction are held until it commits, then sent in publish order; if it rolls back, nothing is sent.
+  - The broker is set to preserve publish order. Order holds within one transaction and one thread. Two transactions that commit a few milliseconds apart on different threads (for example two vehicles reporting progress for one campaign) or on different pods can reach a browser in either order.
   - The app starts even when Redis is down, and subscribes once Redis is back.
 - **Ruled out:**
   - A STOMP relay to RabbitMQ: a new broker for one feature.
@@ -174,6 +179,8 @@ sequenceDiagram
   - 100 updates arrive on the other instance in order;
   - 5000 updates on a single instance arrive in order;
   - an instance starts without Redis.
+
+  [`LiveUpdatesWebSocketTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesWebSocketTest.java) shows with a real STOMP client that an update published in a transaction that rolls back never reaches the browser.
 
 ### 6. DTOs are records, and tests pin their JSON
 
@@ -194,7 +201,7 @@ sequenceDiagram
 - **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold. Stages are increasing whole percentages ending at 100 and the threshold is 0–100; anything else is rejected with a `400` that names the problem.
 - **Telemetry Ingestion Pipeline**: Vehicle diagnostics (battery/fuel level, odometer, engine temperature, GPS) consumed from Kafka (`vehicle.telemetry`) and persisted in `telemetry_snapshots`.
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
-- **Idempotency & Rate Limiting**: per-user idempotency keys enforced by the database (a retry returns the original command, even when identical requests race; keys never expire; reusing a key for another vehicle or command type is a `409`), and a Redis fixed-window rate limit that only counts new commands (10 commands/min, `429` when exceeded).
+- **Idempotency & Rate Limiting**: per-user idempotency keys enforced by the database (a retry returns the original command, even when identical requests race; keys never expire; reusing a key for another vehicle or command type is a `409`), and a Redis fixed-window rate limit that only counts new commands (10 commands/min, `429` when exceeded), skipped and counted while Redis is unreachable.
 - **Reliable Messaging**: Transactional outbox for everything sent to vehicles, retries with backoff and dead-letter topics for everything received, plus Resilience4j circuit breaker and retry on Kafka sends.
 - **Live Fleet Dashboard**: React app with live command status, OTA rollout planning and progress over authenticated WebSockets (STOMP), with per-vehicle subscription authorisation.
 - **Observability**: Asynchronous audit log, Micrometer domain metrics (including outbox backlog and dead letters), Prometheus and a provisioned Grafana dashboard.
@@ -256,7 +263,7 @@ sequenceDiagram
 - [x] **Phase 9 — Horizontal scaling**
   - ESLint 9 for the dashboard, enforced in CI with zero warnings
   - `@Scheduled` jobs locked with ShedLock in Postgres, so each runs once per interval across replicas
-  - Live updates shared between pods over Redis pub/sub, so while Redis is reachable a browser gets an update once, whichever pod produced it, in the order that pod published it. Sending to Redis happens off the request thread: if Redis is down or slow, cross-pod updates are dropped and counted rather than slowing rollouts or commands
+  - Live updates shared between pods over Redis pub/sub, so while Redis is reachable a browser gets an update once, whichever pod produced it. Sending to Redis happens off the request thread: if Redis is down or slow, cross-pod updates are dropped and counted rather than slowing rollouts or commands
   - Outbox no longer republishes every incomplete event on startup (the locked resubmit job retries instead)
   - Kubernetes runs 2 app replicas; a two-instance integration test proves cross-pod delivery
 - [x] **Phase 10 — Correctness & code quality**
@@ -264,6 +271,8 @@ sequenceDiagram
   - Parallel OTA progress events are serialised per campaign with a row lock, and each event costs a fixed number of queries
   - All 25 DTOs are Java records; `DtoJsonContractTest` and `ResponseMappingContractTest` pin their JSON
   - README: design decisions, each linked to the test that proves it
+  - Commands keep working while Redis is down: the rate limit fails open behind a circuit breaker
+  - Live updates are sent only after the database commit, never for a rolled-back transaction
 
 </details>
 
@@ -273,8 +282,7 @@ sequenceDiagram
   - Browser end-to-end tests for the dashboard (Playwright)
   - Redis password and a NetworkPolicy in the Kubernetes manifests (Redis is open inside the cluster today)
   - Move CI and the dashboard image off Node 20, which is end-of-life
-  - Issuing a command needs Redis for the rate limit: with Redis down, new commands fail with a `500` instead of skipping the limit
-  - Live updates are pushed inside the database transaction, so a browser can briefly see a status that is then rolled back; push them after commit instead
+  - Sequence numbers on live updates, so the dashboard can drop a stale one (two updates committed milliseconds apart on different threads or pods can arrive in either order)
 
 ---
 
