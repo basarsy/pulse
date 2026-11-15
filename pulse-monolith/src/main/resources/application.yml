@@ -85,6 +85,17 @@ management:
 resilience4j:
   circuitbreaker:
     instances:
+      redisRateLimit:
+        # Command rate limit (CommandRateLimiter): after repeated Redis failures, skip Redis for 30s
+        # instead of making every command wait out the Redis timeout. Only Redis errors count.
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        record-exceptions:
+          - org.springframework.dao.DataAccessException
       kafkaCircuitBreaker:
         register-health-indicator: true
         sliding-window-type: COUNT_BASED

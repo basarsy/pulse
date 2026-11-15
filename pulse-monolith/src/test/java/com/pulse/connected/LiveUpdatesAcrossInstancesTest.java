@@ -4,6 +4,9 @@ import com.pulse.connected.command.CommandWebSocketService;
 import com.pulse.connected.command.dto.CommandResponse;
 import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.domain.CommandType;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +16,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
@@ -208,6 +213,27 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         String liveness = RestClient.create("http://localhost:" + localPort(c))
                 .get().uri("/actuator/health/liveness").retrieve().body(String.class);
         assertThat(liveness).contains("UP");
+    }
+
+    @Test
+    void instanceWithoutRedis_StillAcceptsCommands_AndStopsCallingRedis() throws Exception {
+        ConfigurableApplicationContext c = startInstance(Map.of("spring.data.redis.port", "1"));
+        String token = registerAndGetToken("no-redis");
+        String vehicleId = createVehicle(token);
+        RestClient api = RestClient.create("http://localhost:" + localPort(c));
+
+        for (int i = 0; i < 6; i++) {
+            HttpStatusCode status = api.post().uri("/api/v1/vehicles/{id}/commands", vehicleId)
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"type\":\"LOCK\"}")
+                    .retrieve().toBodilessEntity().getStatusCode();
+            assertThat(status.value()).isEqualTo(202);
+        }
+
+        assertThat(c.getBean(MeterRegistry.class).counter("pulse.commands.ratelimit.skipped").count()).isEqualTo(6);
+        assertThat(c.getBean(CircuitBreakerRegistry.class).circuitBreaker("redisRateLimit").getState())
+                .isEqualTo(CircuitBreaker.State.OPEN);
     }
 
     private ConfigurableApplicationContext startInstance(Map<String, String> overrides) {
