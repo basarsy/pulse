@@ -8,8 +8,8 @@ metadata:
 spec:
   # Single replica on purpose until the app is safe to scale out:
   #  - the STOMP broker is in-memory, so WebSocket pushes only reach clients on the same pod
-  #  - @Scheduled jobs (stale-command timeout, simulator) would run on every replica
-  # Scale out after moving to a broker relay and adding ShedLock (see README "Roadmap").
+  # @Scheduled jobs are already coordinated: each takes a ShedLock row in Postgres (V8), so it
+  # runs once per interval across replicas. Scale out once live updates are shared between pods.
   replicas: 1
   selector:
     matchLabels:

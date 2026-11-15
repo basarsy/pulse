@@ -13,6 +13,7 @@ import com.pulse.connected.messaging.dto.VehicleCommandEvent;
 import com.pulse.connected.domain.ConnectivityState;
 import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -272,6 +273,7 @@ public class CommandService {
     }
 
     @Scheduled(fixedRate = 30000)
+    @SchedulerLock(name = "command-stale-sweep", lockAtLeastFor = "24000")
     @Transactional
     public void checkStaleCommands() {
         Instant now = Instant.now();
