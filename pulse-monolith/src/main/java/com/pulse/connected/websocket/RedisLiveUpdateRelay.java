@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Shares live updates between instances over the Redis channel {@value #CHANNEL}.
  *
- * <p>Outgoing: callers run inside transactions (some holding a campaign row lock), and an
- * unreachable Redis makes each command wait for its timeout. So envelopes are sent from one
+ * <p>Outgoing: callers run on request and Kafka listener threads, and an unreachable Redis makes
+ * each command wait for its timeout. So envelopes are sent from one
  * background thread (keeping their order) through a bounded queue. When Redis can't keep up they
  * are dropped and counted, not retried: a late progress update is worth little.
  *
