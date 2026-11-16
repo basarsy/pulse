@@ -50,8 +50,9 @@ Postgres (which has a password). A reviewer reading `k8s/` sees that straight aw
 
 ## Constraints
 
-- Policies only take effect where the cluster's network plugin enforces them. kind, k3s with its
-  default setup and the managed clouds do; Docker Desktop's Kubernetes does not. The README says so.
+- Policies only take effect where the cluster's network plugin enforces them. kind and k3s do by
+  default; managed clouds once network policy support is switched on (GKE, EKS VPC CNI); Docker
+  Desktop's Kubernetes does not. The README says so.
 - The ingress controller is assumed to run in the `ingress-nginx` namespace (its standard install),
   matched by the `kubernetes.io/metadata.name` label every namespace carries.
 
