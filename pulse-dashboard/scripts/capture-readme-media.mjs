@@ -1,6 +1,6 @@
 // Captures the README media from a running demo stack:
-//   docs/media/dashboard.png  the fleet dashboard while a rollout is running
-//   docs/media/rollout.gif    a rollout of v1.2.0 moving through its stages, live
+//   docs/media/overview.png  the fleet dashboard while a rollout is running
+//   docs/media/rollout-live.gif    a rollout of v1.2.0 moving through its stages, live
 //
 // Needs: `docker compose up --build` (demo data on), `npx playwright install chromium` once, and
 // ffmpeg on the PATH. Run from pulse-dashboard: `npm run media`. Each run starts a new rollout,
@@ -107,7 +107,7 @@ const commandResults = () => dashboard
 async function captureDashboard() {
   const close = dashboard.getByRole('button', { name: 'Dismiss notification' });
   while (await close.count()) await close.first().click();
-  await dashboard.screenshot({ path: join(staging, 'dashboard.png'), clip: { x: 0, y: 0, width: VIEWPORT.width, height: 760 } });
+  await dashboard.screenshot({ path: join(staging, 'overview.png'), clip: { x: 0, y: 0, width: VIEWPORT.width, height: 760 } });
 }
 
 let screenshotTaken = false;
@@ -135,7 +135,7 @@ if (status !== 'COMPLETED') fail(`the rollout ended ${status}, not COMPLETED; do
 
 // Speed the clip up to fit the GIF length, then use a shared palette so the GIF stays small.
 const speed = Math.max(1, (clipEnd - clipStart) / GIF_MAX_SECONDS);
-const gif = join(staging, 'rollout.gif');
+const gif = join(staging, 'rollout-live.gif');
 for (const width of [960, 800, 640]) {
   const filters = `setpts=PTS/${speed.toFixed(2)},fps=8,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4`;
   const run = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', clipStart.toFixed(2), '-i', video,
@@ -147,8 +147,8 @@ const gifBytes = statSync(gif).size;
 if (gifBytes > GIF_MAX_BYTES) fail(`the GIF is still over ${GIF_MAX_BYTES / 1024 / 1024} MB at 640px; docs/media is unchanged`);
 
 mkdirSync(OUT, { recursive: true });
-copyFileSync(join(staging, 'dashboard.png'), join(OUT, 'dashboard.png'));
-copyFileSync(gif, join(OUT, 'rollout.gif'));
+copyFileSync(join(staging, 'overview.png'), join(OUT, 'overview.png'));
+copyFileSync(gif, join(OUT, 'rollout-live.gif'));
 rmSync(staging, { recursive: true, force: true });
 console.log(`rollout completed in ${(clipEnd - clipStart).toFixed(0)}s (GIF at ${speed.toFixed(1)}x)`);
-console.log(`wrote ${join(OUT, 'dashboard.png')} and ${join(OUT, 'rollout.gif')} (${(gifBytes / 1024).toFixed(0)} KB)`);
+console.log(`wrote ${join(OUT, 'overview.png')} and ${join(OUT, 'rollout-live.gif')} (${(gifBytes / 1024).toFixed(0)} KB)`);

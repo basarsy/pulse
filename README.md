@@ -16,7 +16,7 @@
 
 **Pulse** is a connected vehicle and fleet OTA update platform (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software releases, staged canary rollouts, and automatic pausing when too many updates fail), **Telemetry & Observability** (vehicle health ingestion, audit logging, circuit breakers, Prometheus/Grafana), and a **Fleet Dashboard** built with React & TypeScript.
 
-![The Pulse fleet dashboard with the demo fleet: 30 vehicles online, a rollout in progress and live command results](docs/media/dashboard.png)
+![The Pulse fleet dashboard with the demo fleet: 30 vehicles online, a rollout in progress and live command results](docs/media/overview.png)
 
 To try it locally, run `docker compose up --build` and sign in as `admin@pulse.demo` / `demo-admin` (see [Try the demo](#try-the-demo)).
 
@@ -212,7 +212,7 @@ sequenceDiagram
 - **Vehicle Simulator**: Mock ECU that emits heartbeats and telemetry and executes commands and OTA updates (enable with `SIMULATOR_ENABLED=true` or the `local` profile).
 - **Kubernetes Ready**: Kustomize manifests for the app, dashboard, Postgres, Kafka, Redis, Prometheus, Grafana and an Nginx ingress; secrets are generated from a git-ignored env file.
 
-![A staged rollout of v1.2.0 to the 12 demo Pulse Aurora vehicles: 25% first, then the rest, updated live as the simulator installs it (the simulator fails about 1 install in 10)](docs/media/rollout.gif)
+![A staged rollout of v1.2.0 to the 12 demo Pulse Aurora vehicles: 25% first, then the rest, updated live as the simulator installs it (the simulator fails about 1 install in 10)](docs/media/rollout-live.gif)
 
 ---
 
@@ -393,7 +393,7 @@ When the app runs from your IDE (Option B), start Prometheus and Grafana too (`d
 
 ### README media
 
-`docs/media/dashboard.png` and `docs/media/rollout.gif` are captured from a running demo stack, so they can be refreshed after a UI change. It needs `ffmpeg` on the PATH and starts a rollout, so use a fresh stack (`down -v` deletes the local stack's data). The script waits for the app to start and the fleet to come online, and only replaces the files when the rollout completed:
+`docs/media/overview.png` and `docs/media/rollout-live.gif` are captured from a running demo stack, so they can be refreshed after a UI change. It needs `ffmpeg` on the PATH and starts a rollout, so use a fresh stack (`down -v` deletes the local stack's data). The script waits for the app to start and the fleet to come online, and only replaces the files when the rollout completed:
 
 ```bash
 docker compose down -v && docker compose up --build -d
