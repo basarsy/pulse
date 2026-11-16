@@ -39,6 +39,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # Required in Kubernetes (app-secrets). Empty means no password, as in Docker Compose and tests.
+      password: ${REDIS_PASSWORD:}
       timeout: 2000ms
 
   kafka:
