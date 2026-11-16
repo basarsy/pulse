@@ -14,7 +14,7 @@ import { otaApi } from '../api/endpoints';
 import type { Campaign, CampaignStatus } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignProgress, campaignTone, dateTime, label, updateTone } from '../utils/format';
+import { campaignBar, campaignProgress, campaignTone, dateTime, label, updateTone } from '../utils/format';
 import styles from './RolloutDetailPage.module.css';
 
 type Action = 'start' | 'pause' | 'resume' | 'abort';
@@ -66,7 +66,6 @@ export default function RolloutDetailPage() {
   const failureRate = c.totalVehiclesTargeted ? (c.vehiclesFailed / c.totalVehiclesTargeted) * 100 : 0;
   const overThreshold = failureRate > c.failureThresholdPercent;
   const progress = campaignProgress(c);
-  const share = (n: number) => (c.totalVehiclesTargeted ? (n / c.totalVehiclesTargeted) * 100 : 0);
 
   return (
     <div>
@@ -95,7 +94,7 @@ export default function RolloutDetailPage() {
         <div className={styles.progress}>
           <StageTrack stages={c.stages} currentStageIndex={c.currentStageIndex} campaignStatus={c.status} />
           <div className={styles.bar}>
-            <ProgressBar value={share(c.vehiclesInstalled)} failed={share(c.vehiclesFailed)} label="Rollout progress"
+            <ProgressBar value={campaignBar(c).installed} failed={campaignBar(c).failed} label="Rollout progress"
                          tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
             <span className="mono">{progress}% finished</span>
           </div>

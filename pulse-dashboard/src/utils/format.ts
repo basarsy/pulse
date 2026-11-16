@@ -66,3 +66,15 @@ export const notificationTone: Record<Notification['type'], Tone> = {
 export function clock(date: Date): string {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
+
+/**
+ * The two segments of a campaign's progress bar, in percent: installed, then failed. A completed
+ * campaign that targeted nobody (every vehicle was already up to date) shows as fully installed.
+ */
+export function campaignBar(c: Campaign): { installed: number; failed: number } {
+  if (!c.totalVehiclesTargeted) return { installed: campaignProgress(c), failed: 0 };
+  return {
+    installed: (c.vehiclesInstalled / c.totalVehiclesTargeted) * 100,
+    failed: (c.vehiclesFailed / c.totalVehiclesTargeted) * 100,
+  };
+}

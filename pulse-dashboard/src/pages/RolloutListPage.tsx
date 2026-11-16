@@ -11,7 +11,7 @@ import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign, SoftwareVersion } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignTone, label, timeAgo, upsertById } from '../utils/format';
+import { campaignBar, campaignTone, label, timeAgo, upsertById } from '../utils/format';
 import styles from './RolloutListPage.module.css';
 
 function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void }) {
@@ -116,11 +116,6 @@ function NewRolloutForm({ onCreated }: { onCreated: (c: Campaign) => void }) {
   );
 }
 
-/** A count as a share of the campaign's targeted vehicles, in percent. */
-function share(c: Campaign, n: number): number {
-  return c.totalVehiclesTargeted ? (n / c.totalVehiclesTargeted) * 100 : 0;
-}
-
 export default function RolloutListPage() {
   const [showForm, setShowForm] = useState(false);
   const campaigns = useAsync(otaApi.campaigns, []);
@@ -162,7 +157,7 @@ export default function RolloutListPage() {
                   <td>
                     <div className={styles.progress}>
                       <ProgressBar size="sm" label={`Rollout ${c.softwareVersion.versionLabel} progress`}
-                                   value={share(c, c.vehiclesInstalled)} failed={share(c, c.vehiclesFailed)}
+                                   value={campaignBar(c).installed} failed={campaignBar(c).failed}
                                    tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
                       <span className="mono muted">{c.vehiclesInstalled}/{c.totalVehiclesTargeted}</span>
                     </div>

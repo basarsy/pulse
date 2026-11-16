@@ -13,13 +13,12 @@ import Status from '../components/Status';
 import { useAuth } from '../context/auth';
 import { useNotifications } from '../context/notifications';
 import { useAsync } from '../hooks/useAsync';
-import { campaignTone, clock, connectivityTone, label, notificationTone, num, timeAgo } from '../utils/format';
+import { campaignBar, campaignTone, clock, connectivityTone, label, notificationTone, num, timeAgo } from '../utils/format';
 import styles from './DashboardPage.module.css';
 
 const LOW_BATTERY = 20;
 
 function ActiveRollout({ campaign: c }: { campaign: Campaign }) {
-  const share = (n: number) => (c.totalVehiclesTargeted ? (n / c.totalVehiclesTargeted) * 100 : 0);
   return (
     <li className={styles.rollout}>
       <div className={styles.rolloutHead}>
@@ -32,7 +31,7 @@ function ActiveRollout({ campaign: c }: { campaign: Campaign }) {
       </div>
       <StageTrack stages={c.stages} currentStageIndex={c.currentStageIndex} campaignStatus={c.status} />
       <div className={styles.progressRow}>
-        <ProgressBar value={share(c.vehiclesInstalled)} failed={share(c.vehiclesFailed)} size="sm"
+        <ProgressBar value={campaignBar(c).installed} failed={campaignBar(c).failed} size="sm"
                      label={`Rollout ${c.softwareVersion.versionLabel} progress`} />
         <span className="mono muted">{c.vehiclesInstalled} of {c.totalVehiclesTargeted} installed</span>
       </div>

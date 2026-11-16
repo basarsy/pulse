@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Campaign } from '../api/types';
-import { campaignProgress, label } from './format';
+import { campaignBar, campaignProgress, label } from './format';
 
 function campaign(overrides: Partial<Campaign>): Campaign {
   return {
@@ -31,5 +31,15 @@ describe('label', () => {
     expect(label('IN_PROGRESS')).toBe('In progress');
     expect(label('FLEET_ADMIN')).toBe('Fleet admin');
     expect(label('LOCK')).toBe('Lock');
+  });
+});
+
+describe('campaignBar', () => {
+  it('splits progress into installed and failed shares of the targeted vehicles', () => {
+    expect(campaignBar(campaign({ totalVehiclesTargeted: 12, vehiclesInstalled: 9, vehiclesFailed: 3 }))).toEqual({ installed: 75, failed: 25 });
+  });
+
+  it('shows a completed campaign that targeted nobody as fully installed', () => {
+    expect(campaignBar(campaign({ totalVehiclesTargeted: 0, status: 'COMPLETED' }))).toEqual({ installed: 100, failed: 0 });
   });
 });
