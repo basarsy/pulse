@@ -351,7 +351,7 @@ docker compose up --build
 
 #### Try the demo
 
-Docker Compose turns on demo data (`DEMO_ENABLED=true`): on first start the app seeds 30 vehicles across three made-up models, software versions `v1.0.0`, `v1.1.0` and `v1.2.0`, and a finished rollout of `v1.1.0` to the Pulse Vela model. The simulator brings the vehicles online within a few seconds.
+Docker Compose turns on demo data (`DEMO_ENABLED=true`): on first start the app seeds 30 vehicles across three made-up models, software versions `v1.0.0`, `v1.1.0` and `v1.2.0`, and a finished rollout of `v1.1.0` to the Pulse Vela model. The simulator brings the vehicles online within about 15 seconds (its heartbeat interval).
 
 | Login | Password | Sees |
 |---|---|---|
@@ -392,7 +392,7 @@ When the app runs from your IDE (Option B), start Prometheus and Grafana too (`d
 
 ### README media
 
-`docs/media/dashboard.png` and `docs/media/rollout.gif` are captured from a running demo stack, so they can be refreshed after a UI change. It needs `ffmpeg` on the PATH and starts a rollout, so use a fresh stack (`down -v` deletes the local stack's data):
+`docs/media/dashboard.png` and `docs/media/rollout.gif` are captured from a running demo stack, so they can be refreshed after a UI change. It needs `ffmpeg` on the PATH and starts a rollout, so use a fresh stack (`down -v` deletes the local stack's data). The script waits for the app to start and the fleet to come online, and only replaces the files when the rollout completed:
 
 ```bash
 docker compose down -v && docker compose up --build -d
