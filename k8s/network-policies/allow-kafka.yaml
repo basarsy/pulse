@@ -1,5 +1,7 @@
-# Kafka: clients from the app; and the broker itself, which reaches its own listener and
-# controller through the kafka Service (advertised listener and quorum voter both name it).
+# Kafka: clients from the app on 9092. The broker can also reach its own listener through the
+# kafka Service (its advertised listener names it); where the network plugin keeps the pod's own
+# address for that hairpin traffic instead of the node's, it needs the second rule. The controller
+# (9093) is reached on localhost and needs no rule.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,6 +31,4 @@ spec:
               component: kafka
       ports:
         - port: 9092
-          protocol: TCP
-        - port: 9093
           protocol: TCP

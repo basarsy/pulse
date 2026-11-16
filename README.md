@@ -214,8 +214,8 @@ sequenceDiagram
   - Rules for outgoing traffic too: DNS and every external call would need explicit exceptions, for little gain once incoming traffic is locked down.
   - Kafka authentication: a much larger change. The rules already confine Kafka to the app.
 - **Proof:**
-  - A CI job starts a real kind cluster and applies the policies and Redis. A pod labelled as the app gets `PONG` with the password and `NOAUTH` without it; any other pod can't connect at all ([`network-policies.sh`](k8s/tests/network-policies.sh)).
-  - Two app instances run against a Redis that requires a password: with the right one the rate limit runs through Redis, and with a wrong one commands are still accepted ([`LiveUpdatesAcrossInstancesTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesAcrossInstancesTest.java)).
+  - A CI job starts a real kind cluster and applies the policies and Redis. A pod labelled as the app gets `PONG` with the password and `NOAUTH` without it. Any other pod in the namespace can't connect, and neither can a pod in another namespace that copies the app's labels ([`network-policies.sh`](k8s/tests/network-policies.sh)).
+  - An app instance with the right Redis password rate-limits through Redis; one with a wrong password still accepts commands and writes nothing to Redis ([`LiveUpdatesAcrossInstancesTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesAcrossInstancesTest.java)).
 
 ---
 
@@ -444,5 +444,7 @@ cp k8s/config/secrets.env.example k8s/config/secrets.env   # then set real value
 kubectl apply -k k8s
 ```
 
-Inside the `pulse` namespace every pod denies incoming traffic except from the components that need it (see [design decision 7](#7-in-kubernetes-each-component-accepts-only-the-traffic-it-needs)). These rules only take effect where the cluster's network plugin enforces NetworkPolicies: kind and k3s do by default, managed clouds usually need it switched on (GKE network policy, network policy support in EKS's VPC CNI), and Docker Desktop's Kubernetes doesn't. The policies expect the ingress controller in the `ingress-nginx` namespace. Prometheus and Grafana aren't exposed; open them with `kubectl -n pulse port-forward svc/grafana 3000` (or `svc/prometheus 9090`).
+Inside the `pulse` namespace every pod denies incoming traffic except from the components that need it (see [design decision 7](#7-in-kubernetes-each-component-accepts-only-the-traffic-it-needs)). These rules only take effect where the cluster's network plugin enforces NetworkPolicies: kind and k3s do by default, managed clouds usually need it switched on (GKE network policy, network policy support in EKS's VPC CNI), and Docker Desktop's default (kubeadm) Kubernetes doesn't. The policies expect the ingress controller in the `ingress-nginx` namespace; if it runs with `hostNetwork`, its traffic comes from node addresses instead and these rules won't match it. Prometheus and Grafana aren't exposed; open them with `kubectl -n pulse port-forward svc/grafana 3000` (or `svc/prometheus 9090`).
+
+Redis needs `REDIS_PASSWORD` in `k8s/config/secrets.env`. A `secrets.env` created before this setting existed doesn't have it, so add it, or Redis won't start.
 

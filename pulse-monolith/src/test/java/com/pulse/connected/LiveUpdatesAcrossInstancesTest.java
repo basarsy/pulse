@@ -6,6 +6,8 @@ import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.domain.CommandType;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -263,6 +265,17 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         issueLock(c);
 
         assertThat(c.getBean(MeterRegistry.class).counter("pulse.commands.ratelimit.skipped").count()).isEqualTo(1);
+        // Redis was up but refused the wrong password: nothing reached it.
+        RedisClient admin = RedisClient.create(RedisURI.builder()
+                .withHost(PASSWORD_REDIS.getHost())
+                .withPort(PASSWORD_REDIS.getMappedPort(6379))
+                .withPassword("s3cret".toCharArray())
+                .build());
+        try (var connection = admin.connect()) {
+            assertThat(connection.sync().keys("ratelimit:commands:*")).isEmpty();
+        } finally {
+            admin.shutdown();
+        }
     }
 
     private static Map<String, String> passwordRedis(String password) {
