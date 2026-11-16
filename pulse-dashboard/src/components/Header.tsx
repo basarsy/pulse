@@ -1,8 +1,11 @@
+import { LogOut } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import Button from './Button';
+import Status from './Status';
 import { useAuth } from '../context/auth';
 import { useLive } from '../context/live';
 import { label } from '../utils/format';
+import styles from './Header.module.css';
 
 export default function Header() {
   const { user, logout } = useAuth();
@@ -10,36 +13,22 @@ export default function Header() {
   const initials = (user?.fullName ?? '?').split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <header style={{
-      height: '70px',
-      borderBottom: '1px solid var(--color-border)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 2rem',
-      backgroundColor: 'var(--color-bg-primary)'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
-        <span style={{
-          width: '8px', height: '8px', borderRadius: '50%',
-          backgroundColor: connected ? 'var(--color-success)' : 'var(--color-warning)'
-        }} />
-        {connected ? 'Live updates connected' : 'Connecting to live updates…'}
+    <header className={styles.header}>
+      <div role="status" title={connected ? 'Receiving live updates' : 'Reconnecting to live updates'}>
+        {connected
+          ? <Status tone="ok" pulse>Live</Status>
+          : <Status tone="warn">Reconnecting…</Status>}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+      <div className={styles.right}>
         <NotificationBell />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{user?.fullName}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-              {user?.roles.map(label).join(', ')}
-            </div>
+        <div className={styles.user}>
+          <span className={styles.avatar} aria-hidden>{initials}</span>
+          <div className={styles.who}>
+            <span className={styles.name}>{user?.fullName}</span>
+            <span className={styles.role}>{user?.roles.map(label).join(', ')}</span>
           </div>
-          <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--color-accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-            {initials}
-          </div>
-          <Button variant="ghost" size="sm" onClick={logout}>Logout</Button>
         </div>
+        <Button variant="ghost" size="sm" icon={LogOut} onClick={logout}>Sign out</Button>
       </div>
     </header>
   );

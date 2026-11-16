@@ -1,59 +1,59 @@
-import React, { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Bell } from 'lucide-react';
 import { useNotifications } from '../context/notifications';
+import { clock, notificationTone } from '../utils/format';
+import Status from './Status';
+import styles from './NotificationBell.module.css';
 
 export default function NotificationBell() {
   const { unreadCount, notifications, markAllAsRead } = useNotifications();
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  // Close on a click outside or on Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   return (
-    <div style={{ position: 'relative' }}>
-      <button 
+    <div className={styles.root} ref={root}>
+      <button
+        className={styles.bell}
         onClick={() => setOpen(!open)}
-        style={{
-          background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', position: 'relative',
-          color: 'var(--color-text-secondary)'
-        }}
+        aria-expanded={open}
+        aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
       >
-        🔔
-        {unreadCount > 0 && (
-          <span style={{
-            position: 'absolute', top: '-5px', right: '-5px',
-            background: 'var(--color-danger)', color: 'white',
-            borderRadius: '50%', padding: '0.1rem 0.4rem',
-            fontSize: '0.7rem', fontWeight: 'bold',
-            animation: 'pulse-glow 2s infinite'
-          }}>
-            {unreadCount}
-          </span>
-        )}
+        <Bell size={18} strokeWidth={1.75} aria-hidden />
+        {unreadCount > 0 && <span className={`${styles.count} mono`} aria-hidden>{unreadCount}</span>}
       </button>
-
       {open && (
-        <div className="glass-panel" style={{
-          position: 'absolute', top: '100%', right: 0, width: '300px', marginTop: '0.5rem',
-          maxHeight: '400px', overflowY: 'auto', zIndex: 50
-        }}>
-          <div style={{ padding: '1rem', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between' }}>
-            <h4 style={{ margin: 0 }}>Notifications</h4>
-            <button onClick={markAllAsRead} style={{ background: 'none', border: 'none', color: 'var(--color-accent-primary)', cursor: 'pointer', fontSize: '0.8rem' }}>Mark all read</button>
-          </div>
-          <div style={{ padding: '0.5rem' }}>
-            {notifications.length === 0 ? (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>No notifications</div>
-            ) : (
-              notifications.map(n => (
-                <div key={n.id} style={{
-                  padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  opacity: n.read ? 0.6 : 1
-                }}>
-                  <div style={{ fontSize: '0.875rem' }}>{n.message}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
-                    {n.timestamp.toLocaleTimeString()}
-                  </div>
-                </div>
-              ))
+        <div className={styles.menu} role="dialog" aria-label="Notifications">
+          <div className={styles.menuHeader}>
+            <span className={styles.menuTitle}>Notifications</span>
+            {notifications.length > 0 && (
+              <button className={styles.markRead} onClick={markAllAsRead}>Mark all read</button>
             )}
           </div>
+          {notifications.length === 0 ? (
+            <p className={styles.empty}>Nothing yet. Command results and finished rollouts show up here.</p>
+          ) : (
+            <ul className={styles.list}>
+              {notifications.map(n => (
+                <li key={n.id} className={n.read ? styles.read : ''}>
+                  <Status tone={notificationTone[n.type]}>{n.message}</Status>
+                  <span className={`${styles.time} mono`}>{clock(n.timestamp)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

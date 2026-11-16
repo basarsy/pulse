@@ -55,7 +55,7 @@ async function signIn(page) {
   await page.fill('input[type=password]', ADMIN.password);
   await page.click('button[type=submit]');
   await page.waitForURL(url => !url.pathname.startsWith('/login'));
-  await page.getByText('Live updates connected').waitFor();
+  await page.locator('header').getByText('Live', { exact: true }).waitFor();
 }
 
 // --- the stack is up, seeded, and the whole fleet is online ---
@@ -98,16 +98,16 @@ for (const [i, type] of COMMANDS.entries()) {
   await api(`/api/v1/vehicles/${fleet[i].id}/commands`, { token, method: 'POST', body: { type } });
 }
 const commandResults = () => dashboard
-  .locator('.glass-panel', { has: dashboard.getByRole('heading', { name: 'Live Activity' }) })
+  .locator('section', { has: dashboard.getByRole('heading', { name: 'Live activity' }) })
   .getByText(COMMAND_RESULT)
   .count();
 
 // Closes the pop-up toasts (the same results are in the activity panel), then captures the top of
 // the page, where the content is.
 async function captureDashboard() {
-  const close = dashboard.getByRole('button', { name: '×' });
+  const close = dashboard.getByRole('button', { name: 'Dismiss notification' });
   while (await close.count()) await close.first().click();
-  await dashboard.screenshot({ path: join(staging, 'dashboard.png'), clip: { x: 0, y: 0, width: VIEWPORT.width, height: 580 } });
+  await dashboard.screenshot({ path: join(staging, 'dashboard.png'), clip: { x: 0, y: 0, width: VIEWPORT.width, height: 760 } });
 }
 
 let screenshotTaken = false;

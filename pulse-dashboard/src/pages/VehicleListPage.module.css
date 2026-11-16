@@ -1,0 +1,21 @@
+.formPanel {
+  margin-bottom: var(--space-5);
+}
+
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) 120px auto;
+  gap: var(--space-4);
+  align-items: end;
+}
+
+.formError {
+  grid-column: 1 / -1;
+}
+
+.battery {
+  display: grid;
+  grid-template-columns: 64px 40px;
+  align-items: center;
+  gap: var(--space-3);
+}

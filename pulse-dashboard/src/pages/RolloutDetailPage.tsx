@@ -1,12 +1,20 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
-import Badge from '../components/Badge';
+import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Pause, Play, Square, type LucideIcon } from 'lucide-react';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
+import PageHeader from '../components/PageHeader';
+import Panel from '../components/Panel';
+import ProgressBar from '../components/ProgressBar';
+import StageTrack from '../components/StageTrack';
+import Stat from '../components/Stat';
+import Status from '../components/Status';
 import { otaApi } from '../api/endpoints';
 import type { Campaign, CampaignStatus } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignColor, campaignProgress, dateTime, label, updateColor } from '../utils/format';
+import { campaignProgress, campaignTone, dateTime, label, updateTone } from '../utils/format';
+import styles from './RolloutDetailPage.module.css';
 
 type Action = 'start' | 'pause' | 'resume' | 'abort';
 
@@ -16,6 +24,13 @@ const ACTIONS: Record<CampaignStatus, Action[]> = {
   PAUSED: ['resume', 'abort'],
   COMPLETED: [],
   ABORTED: [],
+};
+
+const ACTION_UI: Record<Action, { text: string; icon: LucideIcon; variant: 'primary' | 'secondary' | 'danger' }> = {
+  start: { text: 'Start', icon: Play, variant: 'primary' },
+  pause: { text: 'Pause', icon: Pause, variant: 'secondary' },
+  resume: { text: 'Resume', icon: Play, variant: 'primary' },
+  abort: { text: 'Abort', icon: Square, variant: 'danger' },
 };
 
 export default function RolloutDetailPage() {
@@ -37,93 +52,82 @@ export default function RolloutDetailPage() {
       campaign.setData(await otaApi.action(id, action));
       vehicles.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Could not ${action} rollout`);
+      setError(err instanceof Error ? err.message : `Could not ${action} the rollout`);
     } finally {
       setBusy(null);
     }
   };
 
   const c = campaign.data;
-  if (campaign.error) return <div style={{ color: 'var(--color-danger)' }}>{campaign.error}</div>;
-  if (!c) return <div>Loading rollout…</div>;
+  if (campaign.error) return <p className="error" role="alert">{campaign.error}</p>;
+  if (!c) return <p className="muted">Loading rollout…</p>;
 
   const failureRate = c.totalVehiclesTargeted ? (c.vehiclesFailed / c.totalVehiclesTargeted) * 100 : 0;
+  const overThreshold = failureRate > c.failureThresholdPercent;
   const progress = campaignProgress(c);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
-        <div>
-          <h2>Rollout {c.softwareVersion.versionLabel}</h2>
-          <div style={{ color: 'var(--color-text-secondary)' }}>
-            Target: {c.targetModel} • Created {dateTime(c.createdAt)} • Pauses above {c.failureThresholdPercent}% failures per stage
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <Badge color={campaignColor[c.status]}>{label(c.status)}</Badge>
-          {ACTIONS[c.status].map(action => (
-            <Button key={action} size="sm" variant={action === 'abort' ? 'danger' : 'primary'}
-                    isLoading={busy === action} disabled={busy !== null} onClick={() => run(action)}>
-              {action[0].toUpperCase() + action.slice(1)}
+      <Link to="/rollouts" className={styles.back}><ArrowLeft size={14} aria-hidden /> OTA updates</Link>
+      <PageHeader
+        eyebrow="Rollout"
+        title={<><span className="mono">{c.softwareVersion.versionLabel}</span> <span className="muted">to</span> {c.targetModel}</>}
+        meta={<>
+          <Status tone={campaignTone[c.status]}>{label(c.status)}</Status>
+          <span>Created {dateTime(c.createdAt)}</span>
+          <span>Pauses above {c.failureThresholdPercent}% failed per stage</span>
+        </>}
+        actions={ACTIONS[c.status].map(action => {
+          const ui = ACTION_UI[action];
+          return (
+            <Button key={action} variant={ui.variant} icon={ui.icon} isLoading={busy === action}
+                    disabled={busy !== null} onClick={() => run(action)}>
+              {ui.text}
             </Button>
-          ))}
-        </div>
-      </div>
-      {error && <div style={{ color: 'var(--color-danger)', marginBottom: '1rem' }}>{error}</div>}
+          );
+        })}
+      />
+      {error && <p className="error" role="alert">{error}</p>}
 
-      <div className="glass-panel" style={{ padding: '2rem', marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <span>{c.vehiclesInstalled} installed • {c.vehiclesFailed} failed • {c.totalVehiclesTargeted} targeted</span>
-              <span>{progress}% finished</span>
-            </div>
-            <div style={{ height: '12px', background: 'rgba(255,255,255,0.1)', borderRadius: '6px', overflow: 'hidden' }}>
-              <div style={{ width: `${progress}%`, height: '100%', background: 'var(--color-accent-gradient)', transition: 'width 1s ease' }} />
-            </div>
+      <Panel className={styles.progressPanel}>
+        <div className={styles.progress}>
+          <StageTrack stages={c.stages} currentStageIndex={c.currentStageIndex} campaignStatus={c.status} />
+          <div className={styles.bar}>
+            <ProgressBar value={progress} label="Rollout progress" tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
+            <span className="mono">{progress}% finished</span>
           </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 700, color: failureRate > c.failureThresholdPercent ? 'var(--color-danger)' : 'var(--color-success)' }}>
-              {failureRate.toFixed(1)}%
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Failure rate</div>
+          <div className={styles.figures}>
+            <Stat label="Installed" value={c.vehiclesInstalled} />
+            <Stat label="Failed" value={c.vehiclesFailed} />
+            <Stat label="Targeted" value={c.totalVehiclesTargeted} />
+            <Stat label="Failure rate" value={<span className={overThreshold ? styles.bad : ''}>{failureRate.toFixed(1)}%</span>}
+                  detail={overThreshold ? `Above the ${c.failureThresholdPercent}% limit` : `Limit ${c.failureThresholdPercent}%`} />
           </div>
         </div>
+      </Panel>
 
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-          {c.stages.map((stage, index) => (
-            <div key={stage.id} style={{
-              flex: 1, padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.03)',
-              border: index === c.currentStageIndex && c.status === 'IN_PROGRESS' ? '1px solid var(--color-accent-primary)' : '1px solid transparent'
-            }}>
-              <div style={{ fontWeight: 600 }}>Stage {index + 1} · {stage.percentage}%</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>{label(stage.status)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
-        <table>
-          <thead>
-            <tr><th>VIN</th><th>Status</th><th>Progress</th><th>Started</th><th>Error</th></tr>
-          </thead>
-          <tbody>
-            {vehicles.data?.length === 0 && (
-              <tr><td colSpan={5} style={{ color: 'var(--color-text-secondary)' }}>No vehicles targeted yet.</td></tr>
-            )}
-            {vehicles.data?.map(u => (
-              <tr key={u.id}>
-                <td style={{ fontFamily: 'monospace' }}>{u.vin}</td>
-                <td><Badge color={updateColor[u.status]}>{label(u.status)}</Badge></td>
-                <td>{u.progressPercent}%</td>
-                <td>{dateTime(u.startedAt)}</td>
-                <td style={{ color: 'var(--color-danger)' }}>{u.errorMessage ?? ''}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Panel title="Vehicles" aside={vehicles.data?.length ? <span className="mono">{vehicles.data.length}</span> : undefined} flush>
+        {vehicles.data?.length === 0 ? (
+          <EmptyState>No vehicles targeted yet. Starting the rollout instructs the first stage.</EmptyState>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr><th>VIN</th><th>Status</th><th className="num">Progress</th><th>Started</th><th>Error</th></tr>
+            </thead>
+            <tbody>
+              {vehicles.data?.map(u => (
+                <tr key={u.id}>
+                  <td className="mono">{u.vin}</td>
+                  <td><Status tone={updateTone[u.status]}>{label(u.status)}</Status></td>
+                  <td className="mono num">{u.progressPercent}%</td>
+                  <td className="mono muted">{dateTime(u.startedAt)}</td>
+                  <td className={`wrap ${styles.failure}`}>{u.errorMessage ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
     </div>
   );
 }

@@ -15,7 +15,7 @@ import RolloutDetailPage from './pages/RolloutDetailPage';
 
 const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) => {
   const { isAuthenticated, isAdmin, restoring } = useAuth();
-  if (restoring) return <div className="page-content">Loading…</div>;
+  if (restoring) return <p className="muted page-loading">Loading…</p>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (adminOnly && !isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;

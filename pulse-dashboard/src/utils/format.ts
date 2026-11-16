@@ -1,6 +1,7 @@
 import type { Campaign, CampaignStatus, CommandStatus, ConnectivityState, UpdateStatus } from '../api/types';
 
-type BadgeColor = 'green' | 'red' | 'yellow' | 'blue' | 'gray';
+import type { Tone } from '../components/Status';
+import type { Notification } from '../context/notifications';
 
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return 'never';
@@ -20,25 +21,27 @@ export function num(value: number | null | undefined, digits = 0, unit = ''): st
   return `${value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}${unit}`;
 }
 
+/** An enum value as sentence-case text: 'IN_PROGRESS' → 'In progress'. */
 export function label(value: string): string {
-  return value.replace(/_/g, ' ');
+  const words = value.replace(/_/g, ' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export const connectivityColor: Record<ConnectivityState, BadgeColor> = {
-  ONLINE: 'green', OFFLINE: 'red', SLEEPING: 'yellow',
+export const connectivityTone: Record<ConnectivityState, Tone> = {
+  ONLINE: 'ok', OFFLINE: 'bad', SLEEPING: 'warn',
 };
 
-export const commandColor: Record<CommandStatus, BadgeColor> = {
-  PENDING: 'gray', SENT: 'blue', ACKNOWLEDGED: 'blue', COMPLETED: 'green', FAILED: 'red', TIMED_OUT: 'yellow', CANCELLED: 'gray',
+export const commandTone: Record<CommandStatus, Tone> = {
+  PENDING: 'neutral', SENT: 'info', ACKNOWLEDGED: 'info', COMPLETED: 'ok', FAILED: 'bad', TIMED_OUT: 'warn', CANCELLED: 'neutral',
 };
 
-export const campaignColor: Record<CampaignStatus, BadgeColor> = {
-  DRAFT: 'gray', IN_PROGRESS: 'blue', PAUSED: 'yellow', COMPLETED: 'green', ABORTED: 'red',
+export const campaignTone: Record<CampaignStatus, Tone> = {
+  DRAFT: 'neutral', IN_PROGRESS: 'info', PAUSED: 'warn', COMPLETED: 'ok', ABORTED: 'bad',
 };
 
-export const updateColor: Record<UpdateStatus, BadgeColor> = {
-  PENDING: 'gray', DOWNLOADING: 'blue', DOWNLOADED: 'blue', INSTALLING: 'blue',
-  INSTALLED: 'green', FAILED: 'red', ROLLED_BACK: 'yellow',
+export const updateTone: Record<UpdateStatus, Tone> = {
+  PENDING: 'neutral', DOWNLOADING: 'info', DOWNLOADED: 'info', INSTALLING: 'info',
+  INSTALLED: 'ok', FAILED: 'bad', ROLLED_BACK: 'warn',
 };
 
 /** Upserts {@code item} into a list by id, keeping the list order (new items first). */
@@ -53,4 +56,13 @@ export function upsertById<T extends { id: string }>(list: T[] | undefined, item
 export function campaignProgress(c: Campaign): number {
   if (!c.totalVehiclesTargeted) return c.status === 'COMPLETED' ? 100 : 0;
   return Math.round(((c.vehiclesInstalled + c.vehiclesFailed) / c.totalVehiclesTargeted) * 100);
+}
+
+export const notificationTone: Record<Notification['type'], Tone> = {
+  success: 'ok', error: 'bad', warning: 'warn', info: 'info',
+};
+
+/** A clock time for logs, e.g. 14:05:09. */
+export function clock(date: Date): string {
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }

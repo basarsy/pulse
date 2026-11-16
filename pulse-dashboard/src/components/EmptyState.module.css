@@ -1,0 +1,12 @@
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.inset {
+  padding: var(--space-5) var(--space-4);
+}

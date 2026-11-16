@@ -1,0 +1,26 @@
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.value {
+  color: var(--text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.md {
+  font-size: var(--text-lg);
+}
+
+.lg {
+  font-size: var(--text-2xl);
+  line-height: 1.15;
+}
+
+.detail {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

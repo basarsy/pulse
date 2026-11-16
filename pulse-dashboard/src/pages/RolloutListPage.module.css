@@ -1,0 +1,37 @@
+.formPanel {
+  margin-bottom: var(--space-5);
+}
+
+.forms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.versionForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.versionFields {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.rolloutFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 160px auto;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: minmax(80px, 160px) auto;
+  align-items: center;
+  gap: var(--space-3);
+}

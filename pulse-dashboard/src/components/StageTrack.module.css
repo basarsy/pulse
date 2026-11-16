@@ -1,0 +1,55 @@
+.track {
+  display: flex;
+  list-style: none;
+}
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.marker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--neutral);
+}
+
+.line {
+  flex: 1;
+  height: 1px;
+  margin-right: var(--space-2);
+  background: var(--rule-strong);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  padding-right: var(--space-3);
+}
+
+.pct {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.state {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.done .marker { color: var(--ok); }
+.done .line { background: var(--ok); }
+.done .pct { color: var(--text); }
+
+.active .marker { color: var(--accent); }
+.active .pct { color: var(--accent); }
+.active .state { color: var(--text); }
+
+.paused .marker { color: var(--warn); }
+.paused .pct { color: var(--warn); }
+.paused .state { color: var(--text); }

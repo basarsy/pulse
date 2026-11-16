@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Campaign } from '../api/types';
-import { campaignProgress } from './format';
+import { campaignProgress, label } from './format';
 
 function campaign(overrides: Partial<Campaign>): Campaign {
   return {
@@ -23,5 +23,13 @@ describe('campaignProgress', () => {
 
   it('is 0 for a running campaign that has targeted no vehicles yet', () => {
     expect(campaignProgress(campaign({ totalVehiclesTargeted: 0, status: 'IN_PROGRESS' }))).toBe(0);
+  });
+});
+
+describe('label', () => {
+  it('turns an enum value into sentence case', () => {
+    expect(label('IN_PROGRESS')).toBe('In progress');
+    expect(label('FLEET_ADMIN')).toBe('Fleet admin');
+    expect(label('LOCK')).toBe('Lock');
   });
 });

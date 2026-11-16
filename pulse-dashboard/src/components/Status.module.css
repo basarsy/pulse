@@ -1,0 +1,31 @@
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ok .dot { color: var(--ok); }
+.bad .dot { color: var(--bad); }
+.warn .dot { color: var(--warn); }
+.info .dot { color: var(--info); }
+.neutral .dot { color: var(--neutral); }
+
+.pulse {
+  animation: pulse 1.6s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

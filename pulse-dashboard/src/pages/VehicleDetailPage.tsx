@@ -1,24 +1,33 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
-import Badge from '../components/Badge';
+import { Link, useParams } from 'react-router-dom';
+import {
+  Activity, ArrowLeft, Fan, Lightbulb, Lock, LockOpen, MapPin, Power, type LucideIcon,
+} from 'lucide-react';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
+import PageHeader from '../components/PageHeader';
+import Panel from '../components/Panel';
+import Stat from '../components/Stat';
+import Status from '../components/Status';
 import { vehicleApi } from '../api/endpoints';
 import { COMMAND_TYPES, type Command, type CommandType, type TelemetrySnapshot, type VehicleUpdate } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { commandColor, connectivityColor, dateTime, label, num, timeAgo, updateColor, upsertById } from '../utils/format';
+import { commandTone, connectivityTone, dateTime, label, num, timeAgo, updateTone, upsertById } from '../utils/format';
+import styles from './VehicleDetailPage.module.css';
 
 const TABS = ['overview', 'commands', 'telemetry', 'updates'] as const;
 type Tab = typeof TABS[number];
 
-function Stat({ title, value }: { title: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>{title}</div>
-      <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{value}</div>
-    </div>
-  );
-}
+const COMMAND_ICON: Record<CommandType, LucideIcon> = {
+  LOCK: Lock,
+  UNLOCK: LockOpen,
+  REMOTE_START: Power,
+  FLASH_LIGHTS: Lightbulb,
+  LOCATE: MapPin,
+  CLIMATE_ON: Fan,
+  CHECK_STATUS: Activity,
+};
 
 function CommandsTab({ vehicleId }: { vehicleId: string }) {
   const commands = useAsync(() => vehicleApi.commands(vehicleId), [vehicleId]);
@@ -36,7 +45,7 @@ function CommandsTab({ vehicleId }: { vehicleId: string }) {
       const command = await vehicleApi.issueCommand(vehicleId, type);
       commands.setData(list => upsertById(list, command));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Command failed');
+      setError(err instanceof Error ? err.message : 'The command could not be sent');
     } finally {
       setSending(null);
     }
@@ -47,46 +56,49 @@ function CommandsTab({ vehicleId }: { vehicleId: string }) {
       const command = await vehicleApi.cancelCommand(vehicleId, commandId);
       commands.setData(list => upsertById(list, command));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not cancel');
+      setError(err instanceof Error ? err.message : 'The command could not be cancelled');
     }
   };
 
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        {COMMAND_TYPES.map(type => (
-          <Button key={type} variant="secondary" isLoading={sending === type} disabled={sending !== null} onClick={() => issue(type)}>
-            {label(type)}
-          </Button>
-        ))}
-      </div>
-      {error && <div style={{ color: 'var(--color-danger)', marginBottom: '1rem' }}>{error}</div>}
-
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
-        <table>
-          <thead>
-            <tr><th>Command</th><th>Status</th><th>Requested</th><th>Result</th><th /></tr>
-          </thead>
-          <tbody>
-            {commands.data?.length === 0 && (
-              <tr><td colSpan={5} style={{ color: 'var(--color-text-secondary)' }}>No commands sent yet.</td></tr>
-            )}
-            {commands.data?.map(c => (
-              <tr key={c.id}>
-                <td style={{ fontWeight: 600 }}>{label(c.type)}</td>
-                <td><Badge color={commandColor[c.status]}>{label(c.status)}</Badge></td>
-                <td>{timeAgo(c.requestedAt)}</td>
-                <td style={{ color: 'var(--color-text-secondary)' }}>{c.resultMessage ?? '—'}</td>
-                <td>
-                  {(c.status === 'PENDING' || c.status === 'SENT') && (
-                    <Button variant="ghost" size="sm" onClick={() => cancel(c.id)}>Cancel</Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className={styles.stack}>
+      <Panel title="Send a command" aside="Queued if the vehicle is offline">
+        <div className={styles.commands}>
+          {COMMAND_TYPES.map(type => (
+            <Button key={type} variant="secondary" icon={COMMAND_ICON[type]} isLoading={sending === type}
+                    disabled={sending !== null} onClick={() => issue(type)}>
+              {label(type)}
+            </Button>
+          ))}
+        </div>
+        {error && <p className={`error ${styles.error}`} role="alert">{error}</p>}
+      </Panel>
+      <Panel title="History" flush>
+        {commands.data?.length === 0 ? (
+          <EmptyState>No commands sent to this vehicle yet.</EmptyState>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr><th>Command</th><th>Status</th><th>Requested</th><th>Result</th><th aria-label="Actions" /></tr>
+            </thead>
+            <tbody>
+              {commands.data?.map(c => (
+                <tr key={c.id}>
+                  <td>{label(c.type)}</td>
+                  <td><Status tone={commandTone[c.status]}>{label(c.status)}</Status></td>
+                  <td className="muted">{timeAgo(c.requestedAt)}</td>
+                  <td className="muted wrap">{c.resultMessage ?? '—'}</td>
+                  <td className="num">
+                    {(c.status === 'PENDING' || c.status === 'SENT') && (
+                      <Button variant="ghost" size="sm" onClick={() => cancel(c.id)}>Cancel</Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
     </div>
   );
 }
@@ -94,27 +106,28 @@ function CommandsTab({ vehicleId }: { vehicleId: string }) {
 function TelemetryTab({ vehicleId }: { vehicleId: string }) {
   const history = useAsync<TelemetrySnapshot[]>(() => vehicleApi.telemetryHistory(vehicleId), [vehicleId], 20000);
   return (
-    <div className="glass-panel" style={{ overflow: 'hidden' }}>
-      <table>
-        <thead>
-          <tr><th>Recorded</th><th>Battery / fuel</th><th>Odometer</th><th>Engine temp</th><th>Position</th></tr>
-        </thead>
-        <tbody>
-          {history.data?.length === 0 && (
-            <tr><td colSpan={5} style={{ color: 'var(--color-text-secondary)' }}>No telemetry received yet.</td></tr>
-          )}
-          {history.data?.map(t => (
-            <tr key={t.id}>
-              <td>{dateTime(t.recordedAt)}</td>
-              <td>{num(t.batteryOrFuelLevel, 1, '%')}</td>
-              <td>{num(t.odometerKm, 1, ' km')}</td>
-              <td>{num(t.engineTempC, 1, ' °C')}</td>
-              <td style={{ fontFamily: 'monospace' }}>{num(t.lat, 4)}, {num(t.lng, 4)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Panel title="Telemetry" aside="Newest first" flush>
+      {history.data?.length === 0 ? (
+        <EmptyState>No telemetry yet. Readings appear once the vehicle reports in.</EmptyState>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr><th>Recorded</th><th className="num">Battery / fuel</th><th className="num">Odometer</th><th className="num">Engine temp</th><th>Position</th></tr>
+          </thead>
+          <tbody>
+            {history.data?.map(t => (
+              <tr key={t.id}>
+                <td className="mono muted">{dateTime(t.recordedAt)}</td>
+                <td className="mono num">{num(t.batteryOrFuelLevel, 1, '%')}</td>
+                <td className="mono num">{num(t.odometerKm, 1, ' km')}</td>
+                <td className="mono num">{num(t.engineTempC, 1, ' °C')}</td>
+                <td className="mono">{num(t.lat, 4)}, {num(t.lng, 4)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Panel>
   );
 }
 
@@ -124,28 +137,29 @@ function UpdatesTab({ vehicleId }: { vehicleId: string }) {
     updates.setData(list => upsertById(list, update)));
 
   return (
-    <div className="glass-panel" style={{ overflow: 'hidden' }}>
-      <table>
-        <thead>
-          <tr><th>Version</th><th>Status</th><th>Progress</th><th>Started</th><th>Completed</th><th>Error</th></tr>
-        </thead>
-        <tbody>
-          {updates.data?.length === 0 && (
-            <tr><td colSpan={6} style={{ color: 'var(--color-text-secondary)' }}>No software updates for this vehicle yet.</td></tr>
-          )}
-          {updates.data?.map(u => (
-            <tr key={u.id}>
-              <td style={{ fontWeight: 600 }}>{u.targetVersionLabel}</td>
-              <td><Badge color={updateColor[u.status]}>{label(u.status)}</Badge></td>
-              <td>{u.progressPercent}%</td>
-              <td>{dateTime(u.startedAt)}</td>
-              <td>{dateTime(u.completedAt)}</td>
-              <td style={{ color: 'var(--color-danger)' }}>{u.errorMessage ?? ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Panel title="Software updates" flush>
+      {updates.data?.length === 0 ? (
+        <EmptyState>No software updates for this vehicle yet.</EmptyState>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr><th>Version</th><th>Status</th><th className="num">Progress</th><th>Started</th><th>Completed</th><th>Error</th></tr>
+          </thead>
+          <tbody>
+            {updates.data?.map(u => (
+              <tr key={u.id}>
+                <td className="mono">{u.targetVersionLabel}</td>
+                <td><Status tone={updateTone[u.status]}>{label(u.status)}</Status></td>
+                <td className="mono num">{u.progressPercent}%</td>
+                <td className="mono muted">{dateTime(u.startedAt)}</td>
+                <td className="mono muted">{dateTime(u.completedAt)}</td>
+                <td className={`wrap ${styles.failure}`}>{u.errorMessage ?? ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Panel>
   );
 }
 
@@ -154,56 +168,54 @@ export default function VehicleDetailPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const { data: vehicle, error } = useAsync(() => vehicleApi.get(id), [id], 15000);
 
-  if (error) return <div style={{ color: 'var(--color-danger)' }}>{error}</div>;
-  if (!vehicle) return <div>Loading vehicle…</div>;
+  if (error) return <p className="error" role="alert">{error}</p>;
+  if (!vehicle) return <p className="muted">Loading vehicle…</p>;
+
+  const position = vehicle.lastLat !== null ? `${num(vehicle.lastLat, 4)}, ${num(vehicle.lastLng, 4)}` : '—';
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
-        <div>
-          <h2>{vehicle.modelYear} {vehicle.model}</h2>
-          <div style={{ color: 'var(--color-text-secondary)' }}>
-            VIN: {vehicle.vin} • SW: {vehicle.currentSoftwareVersion ?? 'unknown'} • Last seen {timeAgo(vehicle.lastSeenAt)}
-          </div>
-        </div>
-        <Badge color={connectivityColor[vehicle.connectivityState]}>{vehicle.connectivityState}</Badge>
-      </div>
+      <Link to="/vehicles" className={styles.back}><ArrowLeft size={14} aria-hidden /> Vehicles</Link>
+      <PageHeader
+        title={<>{vehicle.model} <span className="muted mono">{vehicle.modelYear}</span></>}
+        meta={<>
+          <span className="mono">{vehicle.vin}</span>
+          <Status tone={connectivityTone[vehicle.connectivityState]}>{label(vehicle.connectivityState)}</Status>
+        </>}
+      />
 
-      <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--color-border)', marginBottom: '2rem' }}>
+      <section className={styles.readouts} aria-label="Latest readings">
+        <Stat label="Battery / fuel" value={num(vehicle.batteryOrFuelLevel, 1, '%')} />
+        <Stat label="Odometer" value={num(vehicle.odometerKm, 0, ' km')} />
+        <Stat label="Software" value={vehicle.currentSoftwareVersion ?? '—'} />
+        <Stat label="Last seen" value={timeAgo(vehicle.lastSeenAt)} />
+        <Stat label="Position" value={position} />
+      </section>
+
+      <div className={styles.tabs} role="tablist" aria-label="Vehicle sections">
         {TABS.map(t => (
-          <div
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              paddingBottom: '1rem',
-              cursor: 'pointer',
-              textTransform: 'capitalize',
-              color: tab === t ? 'var(--color-accent-primary)' : 'var(--color-text-secondary)',
-              borderBottom: tab === t ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
-              fontWeight: tab === t ? 600 : 400
-            }}
-          >
-            {t}
-          </div>
+          <button key={t} role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls={`panel-${t}`}
+                  className={`${styles.tab} ${tab === t ? styles.selected : ''}`} onClick={() => setTab(t)}>
+            {label(t)}
+          </button>
         ))}
       </div>
 
-      {tab === 'overview' && (
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <h4 style={{ margin: '0 0 1rem 0' }}>Status Summary</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.5rem' }}>
-            <Stat title="Battery / fuel" value={num(vehicle.batteryOrFuelLevel, 1, '%')} />
-            <Stat title="Odometer" value={num(vehicle.odometerKm, 0, ' km')} />
-            <Stat title="Position" value={vehicle.lastLat !== null ? `${num(vehicle.lastLat, 4)}, ${num(vehicle.lastLng, 4)}` : '—'} />
-            <Stat title="Software" value={vehicle.currentSoftwareVersion ?? 'unknown'} />
-            <Stat title="Owner" value={vehicle.ownerEmail} />
-            <Stat title="Registered" value={dateTime(vehicle.createdAt)} />
-          </div>
-        </div>
-      )}
-      {tab === 'commands' && <CommandsTab vehicleId={vehicle.id} />}
-      {tab === 'telemetry' && <TelemetryTab vehicleId={vehicle.id} />}
-      {tab === 'updates' && <UpdatesTab vehicleId={vehicle.id} />}
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'overview' && (
+          <Panel title="Details">
+            <div className={styles.details}>
+              <Stat label="Owner" value={vehicle.ownerEmail} />
+              <Stat label="Registered" value={dateTime(vehicle.createdAt)} />
+              <Stat label="Model year" value={vehicle.modelYear} />
+              <Stat label="Position" value={position} />
+            </div>
+          </Panel>
+        )}
+        {tab === 'commands' && <CommandsTab vehicleId={vehicle.id} />}
+        {tab === 'telemetry' && <TelemetryTab vehicleId={vehicle.id} />}
+        {tab === 'updates' && <UpdatesTab vehicleId={vehicle.id} />}
+      </div>
     </div>
   );
 }
