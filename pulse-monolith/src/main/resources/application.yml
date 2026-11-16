@@ -58,6 +58,9 @@ server:
 pulse:
   simulator:
     enabled: ${SIMULATOR_ENABLED:false}
+  demo:
+    # Seeds demo logins with published passwords (DemoDataSeeder). Local Docker Compose only.
+    enabled: ${DEMO_ENABLED:false}
   security:
     jwt:
       # Required. HS256 needs at least 32 bytes. Dev value lives in application-local.yml.
