@@ -16,6 +16,10 @@
 
 **Pulse** is a connected vehicle and fleet OTA update platform (BMW-inspired). It combines **Remote Vehicle Services** (real-time vehicle status and remote commands over asynchronous channels), **Fleet OTA Update Management** (software releases, staged canary rollouts, and automatic pausing when too many updates fail), **Telemetry & Observability** (vehicle health ingestion, audit logging, circuit breakers, Prometheus/Grafana), and a **Fleet Dashboard** built with React & TypeScript.
 
+![The Pulse fleet dashboard with the demo fleet: 30 vehicles online, a rollout in progress and live command results](docs/media/dashboard.png)
+
+To try it locally, run `docker compose up --build` and sign in as `admin@pulse.demo` / `demo-admin` (see [Try the demo](#try-the-demo)).
+
 ---
 
 ## 🏗️ Architecture: a modular monolith
@@ -208,6 +212,8 @@ sequenceDiagram
 - **Vehicle Simulator**: Mock ECU that emits heartbeats and telemetry and executes commands and OTA updates (enable with `SIMULATOR_ENABLED=true` or the `local` profile).
 - **Kubernetes Ready**: Kustomize manifests for the app, dashboard, Postgres, Kafka, Redis, Prometheus, Grafana and an Nginx ingress; secrets are generated from a git-ignored env file.
 
+![A staged rollout of v1.2.0 to the 12 demo Pulse Aurora vehicles: 25% first, then the rest, updated live as the simulator installs it (the simulator fails about 1 install in 10)](docs/media/rollout.gif)
+
 ---
 
 ## 📌 Development Roadmap & Progress
@@ -273,6 +279,7 @@ sequenceDiagram
   - README: design decisions, each linked to the test that proves it
   - Commands keep working while Redis is down: the rate limit fails open behind a circuit breaker
   - Live updates are sent only after the database commit, never for a rolled-back transaction
+  - Demo data for the local stack (`DEMO_ENABLED`) and a script that re-captures the README screenshot and GIF
 
 </details>
 
@@ -313,6 +320,7 @@ pulse/
 ├── k8s/                    # Kustomize manifests
 ├── observability/grafana/  # Grafana provisioning and the "Pulse Overview" dashboard
 ├── docs/superpowers/       # Design docs and implementation plans for each change
+├── docs/media/             # README screenshot and GIF (npm run media in pulse-dashboard)
 ├── pulse-platform-spec.md  # Original technical specification
 ├── docker-compose.yml      # Full local stack
 └── prometheus.yml
@@ -341,6 +349,17 @@ docker compose up --build
 | Prometheus | http://localhost:9090 |
 | Grafana (dashboard "Pulse Overview") | http://localhost:3000 |
 
+#### Try the demo
+
+Docker Compose turns on demo data (`DEMO_ENABLED=true`): on first start the app seeds 30 vehicles across three made-up models, software versions `v1.0.0`, `v1.1.0` and `v1.2.0`, and a finished rollout of `v1.1.0` to the Pulse Vela model. The simulator brings the vehicles online within a few seconds.
+
+| Login | Password | Sees |
+|---|---|---|
+| `admin@pulse.demo` | `demo-admin` | the whole fleet and the OTA pages (fleet admin) |
+| `owner@pulse.demo` | `demo-owner` | their 3 vehicles (owner) |
+
+As the admin, open **OTA Updates**, create a rollout of `v1.2.0` to `Pulse Aurora` and start it to watch it progress live; or open a vehicle and send it a remote command. These passwords are public, which is why demo data is off unless `DEMO_ENABLED` (or the `local` profile) turns it on.
+
 ### Option B: app from your IDE / Maven, infrastructure in Docker
 
 ```bash
@@ -348,7 +367,7 @@ docker compose up -d postgres redis kafka
 ./mvnw -pl pulse-monolith spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-The `local` profile provides a development JWT secret and enables the vehicle simulator. Outside that profile, `JWT_SECRET` (at least 32 bytes) is required.
+The `local` profile provides a development JWT secret and enables the vehicle simulator and the demo data. Outside that profile, `JWT_SECRET` (at least 32 bytes) is required.
 
 Dashboard in dev mode (proxies `/api` and `/ws-pulse` to `localhost:8080`):
 
@@ -358,9 +377,9 @@ npm install
 npm run dev
 ```
 
-### Fleet admin for local development
+### Making your own account a fleet admin
 
-Self-registration always creates an `OWNER`; admin roles cannot be granted through the API. To try the OTA pages locally, register in the dashboard and then promote that user in the dev database:
+Self-registration always creates an `OWNER`, and admin roles cannot be granted through the API. The demo admin covers the OTA pages; to promote an account you registered yourself, use the dev database:
 
 ```bash
 docker exec pulse-postgres psql -U pulse -d pulse_db -c \
@@ -370,6 +389,17 @@ docker exec pulse-postgres psql -U pulse -d pulse_db -c \
 Sign out and back in (or reload) to pick up the role.
 
 When the app runs from your IDE (Option B), start Prometheus and Grafana too (`docker compose up -d prometheus grafana`) and change the target in `prometheus.yml` to `host.docker.internal:8080`.
+
+### README media
+
+`docs/media/dashboard.png` and `docs/media/rollout.gif` are captured from a running demo stack, so they can be refreshed after a UI change. It needs `ffmpeg` on the PATH and starts a rollout, so use a fresh stack (`down -v` deletes the local stack's data):
+
+```bash
+docker compose down -v && docker compose up --build -d
+cd pulse-dashboard
+npx playwright install chromium   # once
+npm run media
+```
 
 ### Tests
 

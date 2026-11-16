@@ -3,6 +3,8 @@
 pulse:
   simulator:
     enabled: true
+  demo:
+    enabled: true
   security:
     jwt:
       secret: local-dev-only-jwt-secret-change-me-0123456789abcdef
