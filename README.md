@@ -96,7 +96,7 @@ sequenceDiagram
     participant R as Redis
     participant S as Pod holding the browser's WebSocket
     B->>A: POST /api/v1/vehicles/{id}/commands
-    A->>DB: one transaction: command row + outbox row (online vehicle; offline ones wait in PENDING)
+    A->>DB: one transaction: command row + outbox row (online vehicle, offline ones wait in PENDING)
     A-->>B: 202 Accepted
     A->>K: after commit: vehicle.commands (retried until delivered)
     K->>V: command
