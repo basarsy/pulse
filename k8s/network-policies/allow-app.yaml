@@ -1,0 +1,31 @@
+# The app: from the ingress controller (/api, /ws-pulse), the dashboard's nginx (which proxies the
+# same paths) and Prometheus (metrics scrape).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app
+  labels:
+    app: pulse
+spec:
+  podSelector:
+    matchLabels:
+      app: pulse
+      component: pulse-app
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: pulse
+              component: dashboard
+        - podSelector:
+            matchLabels:
+              app: pulse
+              component: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP

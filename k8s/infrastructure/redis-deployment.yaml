@@ -20,6 +20,14 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          # Password from app-secrets; the app reads the same key (REDIS_PASSWORD).
+          args: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: REDIS_PASSWORD
           ports:
             - containerPort: 6379
           resources:

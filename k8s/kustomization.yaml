@@ -22,6 +22,13 @@ resources:
   - dashboard/dashboard-service.yaml
   - dashboard/dashboard-deployment.yaml
   - ingress.yaml
+  - network-policies/default-deny-ingress.yaml
+  - network-policies/allow-app.yaml
+  - network-policies/allow-dashboard.yaml
+  - network-policies/allow-postgres.yaml
+  - network-policies/allow-redis.yaml
+  - network-policies/allow-kafka.yaml
+  - network-policies/allow-prometheus.yaml
 
 # Secrets are generated from a git-ignored env file; see config/secrets.env.example.
 secretGenerator:

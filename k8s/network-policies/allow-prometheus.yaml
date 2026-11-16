@@ -1,0 +1,24 @@
+# Prometheus: only from Grafana. Open the UIs with kubectl port-forward, which doesn't go
+# through these policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus
+  labels:
+    app: pulse
+spec:
+  podSelector:
+    matchLabels:
+      app: pulse
+      component: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: pulse
+              component: grafana
+      ports:
+        - port: 9090
+          protocol: TCP
