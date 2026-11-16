@@ -1,0 +1,14 @@
+# No pod in the namespace accepts traffic unless another policy here allows it.
+# Policies only take effect where the cluster's network plugin enforces them: kind and k3s by
+# default; managed clouds once network policy support is switched on; not Docker Desktop's default
+# (kubeadm) Kubernetes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    app: pulse
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

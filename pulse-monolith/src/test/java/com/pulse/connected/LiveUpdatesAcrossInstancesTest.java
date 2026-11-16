@@ -6,6 +6,8 @@ import com.pulse.connected.domain.CommandStatus;
 import com.pulse.connected.domain.CommandType;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -15,6 +17,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -27,6 +30,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
+import org.testcontainers.containers.GenericContainer;
 
 import java.lang.reflect.Type;
 import java.time.Duration;
@@ -75,6 +79,7 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         INSTANCES.forEach(ConfigurableApplicationContext::close);
         INSTANCES.clear();
         instanceB = null;
+        PASSWORD_REDIS.stop();
     }
 
     @Test
@@ -234,6 +239,63 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
         assertThat(c.getBean(MeterRegistry.class).counter("pulse.commands.ratelimit.skipped").count()).isEqualTo(6);
         assertThat(c.getBean(CircuitBreakerRegistry.class).circuitBreaker("redisRateLimit").getState())
                 .isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    /** Redis as deployed in Kubernetes: commands only with the password. */
+    private static final GenericContainer<?> PASSWORD_REDIS = new GenericContainer<>("redis:7-alpine")
+            .withCommand("redis-server", "--requirepass", "s3cret")
+            .withExposedPorts(6379);
+
+    @Test
+    void instanceWithTheRedisPassword_RateLimitsThroughRedis() throws Exception {
+        PASSWORD_REDIS.start();
+        ConfigurableApplicationContext c = startInstance(passwordRedis("s3cret"));
+
+        issueLock(c);
+
+        assertThat(c.getBean(MeterRegistry.class).counter("pulse.commands.ratelimit.skipped").count()).isZero();
+        assertThat(c.getBean(StringRedisTemplate.class).keys("ratelimit:commands:*")).isNotEmpty();
+    }
+
+    @Test
+    void instanceWithAWrongRedisPassword_StillAcceptsCommands() throws Exception {
+        PASSWORD_REDIS.start();
+        ConfigurableApplicationContext c = startInstance(passwordRedis("wrong"));
+
+        issueLock(c);
+
+        assertThat(c.getBean(MeterRegistry.class).counter("pulse.commands.ratelimit.skipped").count()).isEqualTo(1);
+        // Redis was up but refused the wrong password: nothing reached it.
+        RedisClient admin = RedisClient.create(RedisURI.builder()
+                .withHost(PASSWORD_REDIS.getHost())
+                .withPort(PASSWORD_REDIS.getMappedPort(6379))
+                .withPassword("s3cret".toCharArray())
+                .build());
+        try (var connection = admin.connect()) {
+            assertThat(connection.sync().keys("ratelimit:commands:*")).isEmpty();
+        } finally {
+            admin.shutdown();
+        }
+    }
+
+    private static Map<String, String> passwordRedis(String password) {
+        // REDIS_PASSWORD, as Kubernetes passes it from app-secrets.
+        return Map.of(
+                "spring.data.redis.host", PASSWORD_REDIS.getHost(),
+                "spring.data.redis.port", String.valueOf(PASSWORD_REDIS.getMappedPort(6379)),
+                "REDIS_PASSWORD", password);
+    }
+
+    private void issueLock(ConfigurableApplicationContext c) throws Exception {
+        String token = registerAndGetToken("redis-auth");
+        String vehicleId = createVehicle(token);
+        HttpStatusCode status = RestClient.create("http://localhost:" + localPort(c))
+                .post().uri("/api/v1/vehicles/{id}/commands", vehicleId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"type\":\"LOCK\"}")
+                .retrieve().toBodilessEntity().getStatusCode();
+        assertThat(status.value()).isEqualTo(202);
     }
 
     private ConfigurableApplicationContext startInstance(Map<String, String> overrides) {

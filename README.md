@@ -197,6 +197,26 @@ sequenceDiagram
   - [`DtoJsonContractTest`](pulse-monolith/src/test/java/com/pulse/connected/DtoJsonContractTest.java) reads every DTO from JSON, writes it back, and compares the two exactly.
   - [`ResponseMappingContractTest`](pulse-monolith/src/test/java/com/pulse/connected/ResponseMappingContractTest.java) runs each mapper with a different value in every field, so two arguments of the same type passed in the wrong order make it fail.
 
+### 7. In Kubernetes, each component accepts only the traffic it needs
+
+- **Problem:** inside the cluster, any pod could reach Redis and Kafka, neither of which asks for credentials, and Postgres.
+- **Decision:**
+  - A default rule denies all incoming traffic in the `pulse` namespace. One rule per component then allows exactly the connections Pulse uses:
+    - ingress → app and dashboard;
+    - dashboard → app;
+    - app → Postgres, Redis and Kafka;
+    - Prometheus → app;
+    - Grafana → Prometheus.
+
+    Grafana itself is only reachable through `kubectl port-forward`.
+  - Redis also requires a password from `app-secrets`.
+- **Ruled out:**
+  - Rules for outgoing traffic too: DNS and every external call would need explicit exceptions, for little gain once incoming traffic is locked down.
+  - Kafka authentication: a much larger change. The rules already confine Kafka to the app.
+- **Proof:**
+  - A CI job starts a real kind cluster and applies the policies and Redis. A pod labelled as the app gets `PONG` with the password and `NOAUTH` without it. Any other pod in the namespace can't connect, and neither can a pod in another namespace that copies the app's labels ([`network-policies.sh`](k8s/tests/network-policies.sh)).
+  - An app instance with the right Redis password rate-limits through Redis; one with a wrong password still accepts commands and writes nothing to Redis ([`LiveUpdatesAcrossInstancesTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesAcrossInstancesTest.java)).
+
 ---
 
 ## 🚀 Key Capabilities
@@ -210,7 +230,7 @@ sequenceDiagram
 - **Live Fleet Dashboard**: React app with live command status, OTA rollout planning and progress over authenticated WebSockets (STOMP), with per-vehicle subscription authorisation.
 - **Observability**: Asynchronous audit log, Micrometer domain metrics (including outbox backlog and dead letters), Prometheus and a provisioned Grafana dashboard.
 - **Vehicle Simulator**: Mock ECU that emits heartbeats and telemetry and executes commands and OTA updates (enable with `SIMULATOR_ENABLED=true` or the `local` profile).
-- **Kubernetes Ready**: Kustomize manifests for the app, dashboard, Postgres, Kafka, Redis, Prometheus, Grafana and an Nginx ingress; secrets are generated from a git-ignored env file.
+- **Kubernetes Ready**: Kustomize manifests for the app, dashboard, Postgres, Kafka, Redis, Prometheus, Grafana and an Nginx ingress; secrets are generated from a git-ignored env file. A default-deny network policy lets each component accept only the traffic it needs, and Redis requires a password.
 
 ![A staged rollout of v1.2.0 to the 12 demo Pulse Aurora vehicles: 25% first, then the rest, updated live as the simulator installs it (the simulator fails about 1 install in 10)](docs/media/rollout-live.gif)
 
@@ -281,6 +301,7 @@ sequenceDiagram
   - Live updates are sent only after the database commit, never for a rolled-back transaction
   - Demo data for the local stack (`DEMO_ENABLED`) and a script that re-captures the README screenshot and GIF
   - Dashboard redesign: design tokens, CSS Modules, real icons, a stage timeline for rollouts, accessible contrast and focus
+  - Kubernetes network policies for every component (default deny, proven in a kind cluster in CI) and a Redis password
 
 </details>
 
@@ -288,7 +309,6 @@ sequenceDiagram
   - Device authentication for vehicles (mTLS / device credentials)
   - Grafana provisioning for the Kubernetes manifests (currently Docker Compose only) and alert rules (outbox backlog, dead letters)
   - Browser end-to-end tests for the dashboard (Playwright)
-  - Redis password and a NetworkPolicy in the Kubernetes manifests (Redis is open inside the cluster today)
   - Move CI and the dashboard image off Node 20, which is end-of-life
   - Sequence numbers on live updates, so the dashboard can drop a stale one (two updates committed milliseconds apart on different threads or pods can arrive in either order)
 
@@ -423,4 +443,8 @@ docker build -t pulse-dashboard:0.0.1-SNAPSHOT pulse-dashboard
 cp k8s/config/secrets.env.example k8s/config/secrets.env   # then set real values
 kubectl apply -k k8s
 ```
+
+Inside the `pulse` namespace every pod denies incoming traffic except from the components that need it (see [design decision 7](#7-in-kubernetes-each-component-accepts-only-the-traffic-it-needs)). These rules only take effect where the cluster's network plugin enforces NetworkPolicies: kind and k3s do by default, managed clouds usually need it switched on (GKE network policy, network policy support in EKS's VPC CNI), and Docker Desktop's default (kubeadm) Kubernetes doesn't. The policies expect the ingress controller in the `ingress-nginx` namespace; if it runs with `hostNetwork`, its traffic comes from node addresses instead and these rules won't match it. Prometheus and Grafana aren't exposed; open them with `kubectl -n pulse port-forward svc/grafana 3000` (or `svc/prometheus 9090`).
+
+Redis needs `REDIS_PASSWORD` in `k8s/config/secrets.env`. A `secrets.env` created before this setting existed doesn't have it, so add it, or Redis won't start.
 

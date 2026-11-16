@@ -56,6 +56,23 @@ jobs:
           cp k8s/config/secrets.env.example k8s/config/secrets.env
           kubectl kustomize k8s > /dev/null
 
+  k8s-network-policies:
+    name: Kubernetes network policies enforced
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # kind ≥ 0.24: its default network plugin enforces NetworkPolicies.
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          version: v0.24.0
+
+      - name: Only the app reaches Redis, and only with the password
+        run: bash k8s/tests/network-policies.sh
+
   dashboard:
     name: Dashboard (lint, test, build)
     runs-on: ubuntu-latest
