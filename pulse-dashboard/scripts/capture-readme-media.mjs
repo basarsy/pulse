@@ -139,7 +139,7 @@ const gif = join(staging, 'rollout.gif');
 for (const width of [960, 800, 640]) {
   const filters = `setpts=PTS/${speed.toFixed(2)},fps=8,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4`;
   const run = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', clipStart.toFixed(2), '-i', video,
-    '-filter_complex', filters, gif], { stdio: 'inherit' });
+    '-t', (clipEnd - clipStart).toFixed(2), '-filter_complex', filters, gif], { stdio: 'inherit' });
   if (run.status !== 0) fail('ffmpeg failed');
   if (statSync(gif).size <= GIF_MAX_BYTES) break;
 }

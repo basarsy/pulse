@@ -280,6 +280,7 @@ sequenceDiagram
   - Commands keep working while Redis is down: the rate limit fails open behind a circuit breaker
   - Live updates are sent only after the database commit, never for a rolled-back transaction
   - Demo data for the local stack (`DEMO_ENABLED`) and a script that re-captures the README screenshot and GIF
+  - Dashboard redesign: design tokens, CSS Modules, real icons, a stage timeline for rollouts, accessible contrast and focus
 
 </details>
 
@@ -296,7 +297,7 @@ sequenceDiagram
 ## 🛠️ Tech Stack
 
 - **Backend**: Java 21, Spring Boot 3.3.5, Spring Modulith 1.2.5
-- **Frontend**: React 18, TypeScript 5, Vite 5, STOMP over WebSocket (`@stomp/stompjs`), Vitest, ESLint 9
+- **Frontend**: React 18, TypeScript 5, Vite 5, STOMP over WebSocket (`@stomp/stompjs`), Vitest, ESLint 9, CSS Modules with design tokens, Lucide icons, IBM Plex
 - **Security**: Spring Security, JJWT 0.12.6
 - **Persistence**: Spring Data JPA, PostgreSQL 16, Flyway
 - **Rate limiting & live-update fan-out**: Redis 7 (Spring Data Redis, pub/sub)
