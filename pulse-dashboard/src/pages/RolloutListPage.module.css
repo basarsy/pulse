@@ -9,7 +9,7 @@
   font-size: var(--text-sm);
 }
 
-.versionForm {
+.step {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);

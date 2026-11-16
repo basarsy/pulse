@@ -6,7 +6,7 @@ import styles from './Toast.module.css';
 
 export default function Toast({ notification, onClose }: { notification: Notification; onClose: () => void }) {
   return (
-    <div className={styles.toast} role="status">
+    <div className={styles.toast}>
       <Status tone={notificationTone[notification.type]}>{notification.message}</Status>
       <button className={styles.close} onClick={onClose} aria-label="Dismiss notification">
         <X size={16} strokeWidth={1.75} aria-hidden />
@@ -15,7 +15,7 @@ export default function Toast({ notification, onClose }: { notification: Notific
   );
 }
 
-/** Where toasts stack: top right, newest first. */
+/** Where toasts stack: top right, newest first. One polite live region announces each new toast. */
 export function ToastStack({ children }: { children: React.ReactNode }) {
-  return <div className={styles.stack}>{children}</div>;
+  return <div className={styles.stack} role="status" aria-live="polite">{children}</div>;
 }

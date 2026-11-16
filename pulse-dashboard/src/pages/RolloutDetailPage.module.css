@@ -1,17 +1,3 @@
-.back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-bottom: var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-.back:hover {
-  color: var(--text);
-  text-decoration: none;
-}
-
 .progressPanel {
   margin-bottom: var(--space-5);
 }
@@ -40,12 +26,4 @@
 .figures > * + * {
   padding-left: var(--space-4);
   border-left: 1px solid var(--rule);
-}
-
-.bad {
-  color: var(--bad);
-}
-
-.failure {
-  color: var(--bad);
 }

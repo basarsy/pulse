@@ -63,6 +63,7 @@
 .menuTitle {
   font-size: var(--text-sm);
   font-weight: 600;
+  letter-spacing: 0;
 }
 
 .markRead {
@@ -97,8 +98,9 @@
   border-bottom: none;
 }
 
+/* Already read: the message steps back to muted text; no opacity, so contrast holds. */
 .read {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 .time {

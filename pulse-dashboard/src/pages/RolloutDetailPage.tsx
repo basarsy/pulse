@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Pause, Play, Square, type LucideIcon } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { Pause, Play, Square, type LucideIcon } from 'lucide-react';
+import BackLink from '../components/BackLink';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import PageHeader from '../components/PageHeader';
@@ -65,10 +66,11 @@ export default function RolloutDetailPage() {
   const failureRate = c.totalVehiclesTargeted ? (c.vehiclesFailed / c.totalVehiclesTargeted) * 100 : 0;
   const overThreshold = failureRate > c.failureThresholdPercent;
   const progress = campaignProgress(c);
+  const share = (n: number) => (c.totalVehiclesTargeted ? (n / c.totalVehiclesTargeted) * 100 : 0);
 
   return (
     <div>
-      <Link to="/rollouts" className={styles.back}><ArrowLeft size={14} aria-hidden /> OTA updates</Link>
+      <BackLink to="/rollouts">OTA updates</BackLink>
       <PageHeader
         eyebrow="Rollout"
         title={<><span className="mono">{c.softwareVersion.versionLabel}</span> <span className="muted">to</span> {c.targetModel}</>}
@@ -93,14 +95,15 @@ export default function RolloutDetailPage() {
         <div className={styles.progress}>
           <StageTrack stages={c.stages} currentStageIndex={c.currentStageIndex} campaignStatus={c.status} />
           <div className={styles.bar}>
-            <ProgressBar value={progress} label="Rollout progress" tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
+            <ProgressBar value={share(c.vehiclesInstalled)} failed={share(c.vehiclesFailed)} label="Rollout progress"
+                         tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
             <span className="mono">{progress}% finished</span>
           </div>
           <div className={styles.figures}>
-            <Stat label="Installed" value={c.vehiclesInstalled} />
-            <Stat label="Failed" value={c.vehiclesFailed} />
-            <Stat label="Targeted" value={c.totalVehiclesTargeted} />
-            <Stat label="Failure rate" value={<span className={overThreshold ? styles.bad : ''}>{failureRate.toFixed(1)}%</span>}
+            <Stat mono label="Installed" value={c.vehiclesInstalled} />
+            <Stat mono label="Failed" value={c.vehiclesFailed} />
+            <Stat mono label="Targeted" value={c.totalVehiclesTargeted} />
+            <Stat mono label="Failure rate" value={<span className={overThreshold ? 'text-bad' : ''}>{failureRate.toFixed(1)}%</span>}
                   detail={overThreshold ? `Above the ${c.failureThresholdPercent}% limit` : `Limit ${c.failureThresholdPercent}%`} />
           </div>
         </div>
@@ -121,7 +124,7 @@ export default function RolloutDetailPage() {
                   <td><Status tone={updateTone[u.status]}>{label(u.status)}</Status></td>
                   <td className="mono num">{u.progressPercent}%</td>
                   <td className="mono muted">{dateTime(u.startedAt)}</td>
-                  <td className={`wrap ${styles.failure}`}>{u.errorMessage ?? ''}</td>
+                  <td className="wrap text-bad">{u.errorMessage ?? ''}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, CloudUpload, Plus } from 'lucide-react';
+import { CloudUpload, Plus } from 'lucide-react';
 import { otaApi, vehicleApi } from '../api/endpoints';
-import type { Campaign } from '../api/types';
+import type { Campaign, Vehicle } from '../api/types';
 import { ButtonLink } from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import PageHeader from '../components/PageHeader';
@@ -13,12 +13,13 @@ import Status from '../components/Status';
 import { useAuth } from '../context/auth';
 import { useNotifications } from '../context/notifications';
 import { useAsync } from '../hooks/useAsync';
-import { campaignProgress, campaignTone, clock, label, notificationTone, num } from '../utils/format';
+import { campaignTone, clock, connectivityTone, label, notificationTone, num, timeAgo } from '../utils/format';
 import styles from './DashboardPage.module.css';
 
 const LOW_BATTERY = 20;
 
 function ActiveRollout({ campaign: c }: { campaign: Campaign }) {
+  const share = (n: number) => (c.totalVehiclesTargeted ? (n / c.totalVehiclesTargeted) * 100 : 0);
   return (
     <li className={styles.rollout}>
       <div className={styles.rolloutHead}>
@@ -31,10 +32,34 @@ function ActiveRollout({ campaign: c }: { campaign: Campaign }) {
       </div>
       <StageTrack stages={c.stages} currentStageIndex={c.currentStageIndex} campaignStatus={c.status} />
       <div className={styles.progressRow}>
-        <ProgressBar value={campaignProgress(c)} label={`Rollout ${c.softwareVersion.versionLabel} progress`} size="sm" />
+        <ProgressBar value={share(c.vehiclesInstalled)} failed={share(c.vehiclesFailed)} size="sm"
+                     label={`Rollout ${c.softwareVersion.versionLabel} progress`} />
         <span className="mono muted">{c.vehiclesInstalled} of {c.totalVehiclesTargeted} installed</span>
       </div>
     </li>
+  );
+}
+
+/** The owner's vehicles at a glance; their main job on this page. */
+function MyVehicles({ vehicles }: { vehicles: Vehicle[] }) {
+  return (
+    <Panel title="My vehicles" aside={<Link to="/vehicles">Open the list</Link>} flush>
+      <table className="table">
+        <thead>
+          <tr><th>Vehicle</th><th>Status</th><th className="num">Battery</th><th>Last seen</th></tr>
+        </thead>
+        <tbody>
+          {vehicles.map(v => (
+            <tr key={v.id}>
+              <td><Link to={`/vehicles/${v.id}`} className="row-link">{v.model}</Link> <span className="muted mono">{v.modelYear}</span></td>
+              <td><Status tone={connectivityTone[v.connectivityState]}>{label(v.connectivityState)}</Status></td>
+              <td className="mono num">{num(v.batteryOrFuelLevel, 0, '%')}</td>
+              <td className="muted">{timeAgo(v.lastSeenAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Panel>
   );
 }
 
@@ -64,16 +89,17 @@ export default function DashboardPage() {
       {vehicles.error && <p className="error" role="alert">{vehicles.error}</p>}
 
       <section className={styles.summary} aria-label="Summary">
-        <Stat size="lg" label={isAdmin ? 'Vehicles' : 'My vehicles'} value={loading ? '–' : list.length} />
-        <Stat size="lg" label="Online" value={loading ? '–' : online}
+        <Stat mono size="lg" label={isAdmin ? 'Vehicles' : 'My vehicles'} value={loading ? '–' : list.length} />
+        <Stat mono size="lg" label="Online" value={loading ? '–' : online}
               detail={list.length ? `${Math.round((online / list.length) * 100)}% of ${isAdmin ? 'the fleet' : 'your vehicles'}` : undefined} />
-        <Stat size="lg" label="Average battery" value={num(avgBattery, 0, '%')}
+        <Stat mono size="lg" label="Average battery" value={num(avgBattery, 0, '%')}
               detail={lowBattery ? `${lowBattery} below ${LOW_BATTERY}%` : batteries.length ? 'None running low' : undefined} />
-        {isAdmin && <Stat size="lg" label="Active rollouts" value={campaigns.loading && !campaigns.data ? '–' : active.length} />}
+        {isAdmin && <Stat mono size="lg" label="Active rollouts" value={campaigns.loading && !campaigns.data ? '–' : active.length} />}
       </section>
 
       <div className={styles.grid}>
         <div className={styles.column}>
+          {!isAdmin && list.length > 0 && <MyVehicles vehicles={list} />}
           {isAdmin && (
             <Panel title="Active rollouts" aside={<Link to="/rollouts">All rollouts</Link>}>
               {active.length === 0 ? (
@@ -111,9 +137,8 @@ export default function DashboardPage() {
           </Panel>
           <Panel title="Shortcuts">
             <div className={styles.actions}>
-              <ButtonLink to="/vehicles" icon={Plus}>Register a vehicle</ButtonLink>
+              <ButtonLink to="/vehicles?register=1" icon={Plus}>Register a vehicle</ButtonLink>
               {isAdmin && <ButtonLink to="/rollouts" icon={CloudUpload}>Plan a rollout</ButtonLink>}
-              <ButtonLink to="/vehicles" variant="ghost" icon={ArrowRight}>{isAdmin ? 'Browse the fleet' : 'Open my vehicles'}</ButtonLink>
             </div>
           </Panel>
         </div>

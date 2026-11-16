@@ -53,3 +53,7 @@
 .paused .marker { color: var(--warn); }
 .paused .pct { color: var(--warn); }
 .paused .state { color: var(--text); }
+
+.stage:last-child {
+  flex: none;
+}

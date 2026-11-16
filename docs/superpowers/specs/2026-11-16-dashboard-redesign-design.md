@@ -89,7 +89,7 @@ durations (120ms and 200ms) that collapse to 0 under reduced motion.
   domain and isn't Inter.
 - IBM Plex Mono (400/500) for VINs, version labels, numbers, percentages and timestamps, always
   with tabular figures.
-- Loaded from Google Fonts like the current Inter.
+- Bundled with the app (`@fontsource/ibm-plex-*`) rather than loaded from Google Fonts, so the look never falls back to system fonts and no third party sees visitors. (Changed after review; first built with Google Fonts.)
 - Base 15px, line-height 1.5. Page titles 22px/600; section labels 12px, uppercase, letter-spaced
   and muted, used sparingly as "cluster" labels.
 

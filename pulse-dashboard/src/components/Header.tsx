@@ -14,10 +14,14 @@ export default function Header() {
 
   return (
     <header className={styles.header}>
-      <div role="status" title={connected ? 'Receiving live updates' : 'Reconnecting to live updates'}>
+      <div>
         {connected
           ? <Status tone="ok" pulse>Live</Status>
           : <Status tone="warn">Reconnecting…</Status>}
+        {/* Announced only when the connection changes. */}
+        <span className="visually-hidden" role="status">
+          {connected ? 'Live updates connected' : 'Live updates disconnected, reconnecting'}
+        </span>
       </div>
       <div className={styles.right}>
         <NotificationBell />

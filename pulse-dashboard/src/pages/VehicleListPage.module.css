@@ -19,3 +19,10 @@
   align-items: center;
   gap: var(--space-3);
 }
+
+/* Below 1200px the VIN gives way to the owner column; it stays on the detail page. */
+@media (max-width: 1200px) {
+  .vin {
+    display: none;
+  }
+}

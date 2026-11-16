@@ -9,6 +9,8 @@
   --surface-raised: #23211e;
   --rule: #2f2c28;
   --rule-strong: #3d3934;
+  /* Borders of form controls: at least 3:1 against the page (WCAG 1.4.11). */
+  --control-border: #6b655c;
 
   /* Text */
   --text: #ece8e1;
@@ -24,6 +26,7 @@
   --ok: #6cc58a;
   --warn: #e5c547;
   --bad: #ef6b5e;
+  --bad-soft: rgba(239, 107, 94, 0.12);
   --info: #7fb0e0;
   --neutral: #8f897f;
 

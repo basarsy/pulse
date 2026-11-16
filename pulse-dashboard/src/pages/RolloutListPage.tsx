@@ -11,7 +11,7 @@ import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign, SoftwareVersion } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignProgress, campaignTone, label, timeAgo, upsertById } from '../utils/format';
+import { campaignTone, label, timeAgo, upsertById } from '../utils/format';
 import styles from './RolloutListPage.module.css';
 
 function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void }) {
@@ -38,7 +38,7 @@ function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void
   );
 
   return (
-    <form onSubmit={submit} className={styles.versionForm} aria-labelledby="new-version">
+    <form onSubmit={submit} className={styles.step} aria-labelledby="new-version">
       <h3 id="new-version" className="eyebrow">1 · Software version</h3>
       <div className={styles.versionFields}>
         {field('versionLabel', 'Version', '2026.11.1', true)}
@@ -84,7 +84,7 @@ function NewRolloutForm({ onCreated }: { onCreated: (c: Campaign) => void }) {
       <p className="muted">Pick an existing version, or add a new one first. A rollout reaches a growing share of one model&apos;s fleet,
         stage by stage, and pauses itself if too many installs in a stage fail.</p>
       <NewVersionForm onCreated={v => { versions.setData(list => [v, ...(list ?? [])]); setVersionId(v.id); }} />
-      <form onSubmit={submit} className={styles.versionForm} aria-labelledby="new-rollout">
+      <form onSubmit={submit} className={styles.step} aria-labelledby="new-rollout">
         <h3 id="new-rollout" className="eyebrow">2 · Rollout</h3>
         <div className={styles.rolloutFields}>
           <div className="field">
@@ -114,6 +114,11 @@ function NewRolloutForm({ onCreated }: { onCreated: (c: Campaign) => void }) {
       </form>
     </div>
   );
+}
+
+/** A count as a share of the campaign's targeted vehicles, in percent. */
+function share(c: Campaign, n: number): number {
+  return c.totalVehiclesTargeted ? (n / c.totalVehiclesTargeted) * 100 : 0;
 }
 
 export default function RolloutListPage() {
@@ -156,7 +161,8 @@ export default function RolloutListPage() {
                   <td className="mono">{Math.min(c.currentStageIndex + 1, c.stages.length)} of {c.stages.length}</td>
                   <td>
                     <div className={styles.progress}>
-                      <ProgressBar value={campaignProgress(c)} size="sm" label={`Rollout ${c.softwareVersion.versionLabel} progress`}
+                      <ProgressBar size="sm" label={`Rollout ${c.softwareVersion.versionLabel} progress`}
+                                   value={share(c, c.vehiclesInstalled)} failed={share(c, c.vehiclesFailed)}
                                    tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
                       <span className="mono muted">{c.vehiclesInstalled}/{c.totalVehiclesTargeted}</span>
                     </div>

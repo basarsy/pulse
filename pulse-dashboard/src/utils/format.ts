@@ -1,6 +1,6 @@
 import type { Campaign, CampaignStatus, CommandStatus, ConnectivityState, UpdateStatus } from '../api/types';
 
-import type { Tone } from '../components/Status';
+import type { Tone } from './tone';
 import type { Notification } from '../context/notifications';
 
 export function timeAgo(iso: string | null | undefined): string {

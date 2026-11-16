@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, X } from 'lucide-react';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
@@ -62,7 +62,9 @@ function RegisterVehicleForm({ onRegistered }: { onRegistered: () => void }) {
 
 export default function VehicleListPage() {
   const { isAdmin } = useAuth();
-  const [showForm, setShowForm] = useState(false);
+  // ?register=1 (the overview's "Register a vehicle" shortcut) opens the form straight away.
+  const [searchParams] = useSearchParams();
+  const [showForm, setShowForm] = useState(searchParams.get('register') === '1');
   // Connectivity is not pushed over WebSocket, so the list refreshes periodically.
   const { data: vehicles, error, loading, reload } = useAsync(isAdmin ? vehicleApi.fleet : vehicleApi.mine, [isAdmin], 15000);
   const online = vehicles?.filter(v => v.connectivityState === 'ONLINE').length ?? 0;
@@ -93,7 +95,7 @@ export default function VehicleListPage() {
             <thead>
               <tr>
                 <th>Vehicle</th>
-                <th>VIN</th>
+                <th className={styles.vin}>VIN</th>
                 <th>Status</th>
                 <th>Battery</th>
                 <th>Software</th>
@@ -108,14 +110,16 @@ export default function VehicleListPage() {
                     <Link to={`/vehicles/${v.id}`} className="row-link">{v.model}</Link>
                     <span className="muted mono"> {v.modelYear}</span>
                   </td>
-                  <td className="mono muted">{v.vin}</td>
+                  <td className={`mono muted ${styles.vin}`}>{v.vin}</td>
                   <td><Status tone={connectivityTone[v.connectivityState]}>{label(v.connectivityState)}</Status></td>
                   <td>
-                    <div className={styles.battery}>
-                      <ProgressBar value={v.batteryOrFuelLevel ?? 0} size="sm" label={`Battery of ${v.vin}`}
-                                   tone={v.batteryOrFuelLevel !== null && v.batteryOrFuelLevel < 20 ? 'bad' : 'ok'} />
-                      <span className="mono">{num(v.batteryOrFuelLevel, 0, '%')}</span>
-                    </div>
+                    {v.batteryOrFuelLevel === null ? <span className="muted">—</span> : (
+                      <div className={styles.battery}>
+                        <ProgressBar value={v.batteryOrFuelLevel} size="sm" label={`Battery of ${v.vin}`}
+                                     tone={v.batteryOrFuelLevel < 20 ? 'bad' : 'ok'} />
+                        <span className="mono">{num(v.batteryOrFuelLevel, 0, '%')}</span>
+                      </div>
+                    )}
                   </td>
                   <td className="mono">{v.currentSoftwareVersion ?? '—'}</td>
                   <td className="muted">{timeAgo(v.lastSeenAt)}</td>

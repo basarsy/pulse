@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
-  Activity, ArrowLeft, Fan, Lightbulb, Lock, LockOpen, MapPin, Power, type LucideIcon,
+  Activity, Fan, Lightbulb, Lock, LockOpen, MapPin, Power, type LucideIcon,
 } from 'lucide-react';
+import BackLink from '../components/BackLink';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import PageHeader from '../components/PageHeader';
@@ -153,7 +154,7 @@ function UpdatesTab({ vehicleId }: { vehicleId: string }) {
                 <td className="mono num">{u.progressPercent}%</td>
                 <td className="mono muted">{dateTime(u.startedAt)}</td>
                 <td className="mono muted">{dateTime(u.completedAt)}</td>
-                <td className={`wrap ${styles.failure}`}>{u.errorMessage ?? ''}</td>
+                <td className="wrap text-bad">{u.errorMessage ?? ''}</td>
               </tr>
             ))}
           </tbody>
@@ -175,7 +176,7 @@ export default function VehicleDetailPage() {
 
   return (
     <div>
-      <Link to="/vehicles" className={styles.back}><ArrowLeft size={14} aria-hidden /> Vehicles</Link>
+      <BackLink to="/vehicles">Vehicles</BackLink>
       <PageHeader
         title={<>{vehicle.model} <span className="muted mono">{vehicle.modelYear}</span></>}
         meta={<>
@@ -185,30 +186,28 @@ export default function VehicleDetailPage() {
       />
 
       <section className={styles.readouts} aria-label="Latest readings">
-        <Stat label="Battery / fuel" value={num(vehicle.batteryOrFuelLevel, 1, '%')} />
-        <Stat label="Odometer" value={num(vehicle.odometerKm, 0, ' km')} />
-        <Stat label="Software" value={vehicle.currentSoftwareVersion ?? '—'} />
+        <Stat mono label="Battery / fuel" value={num(vehicle.batteryOrFuelLevel, 1, '%')} />
+        <Stat mono label="Odometer" value={num(vehicle.odometerKm, 0, ' km')} />
+        <Stat mono label="Software" value={vehicle.currentSoftwareVersion ?? '—'} />
         <Stat label="Last seen" value={timeAgo(vehicle.lastSeenAt)} />
-        <Stat label="Position" value={position} />
+        <Stat mono label="Position" value={position} />
       </section>
 
-      <div className={styles.tabs} role="tablist" aria-label="Vehicle sections">
+      <div className={styles.tabs} role="group" aria-label="Vehicle sections">
         {TABS.map(t => (
-          <button key={t} role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls={`panel-${t}`}
+          <button key={t} aria-pressed={tab === t}
                   className={`${styles.tab} ${tab === t ? styles.selected : ''}`} onClick={() => setTab(t)}>
             {label(t)}
           </button>
         ))}
       </div>
 
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <div>
         {tab === 'overview' && (
           <Panel title="Details">
             <div className={styles.details}>
               <Stat label="Owner" value={vehicle.ownerEmail} />
               <Stat label="Registered" value={dateTime(vehicle.createdAt)} />
-              <Stat label="Model year" value={vehicle.modelYear} />
-              <Stat label="Position" value={position} />
             </div>
           </Panel>
         )}
