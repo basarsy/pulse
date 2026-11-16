@@ -114,6 +114,9 @@ public class DemoDataSeeder implements ApplicationRunner {
                             .authorizedUsers(new HashSet<>())
                             .connectivityState(ConnectivityState.OFFLINE)
                             .currentSoftwareVersion(updated ? ROLLED_OUT : BASELINE)
+                            // Varied but repeatable readings; the simulator carries on from these.
+                            .batteryOrFuelLevel(35.0 + (i * 37 + model.code()) % 60)
+                            .odometerKm(1_500.0 + ((i * 7_919 + model.code() * 31) % 42_000))
                             .build());
                     if (updated) {
                         rolledOutModel.add(vehicle);
@@ -150,7 +153,8 @@ public class DemoDataSeeder implements ApplicationRunner {
      * splits a fleet (by VIN order), with every update installed.
      */
     private void completedRollout(SoftwareVersion version, List<Vehicle> fleet, User admin) {
-        Instant start = Instant.now().minus(Duration.ofDays(14));
+        // The campaign's creation time is set to now on save, so its history follows right after.
+        Instant start = Instant.now();
         RolloutCampaign campaign = RolloutCampaign.builder()
                 .softwareVersion(version)
                 .targetModel(ROLLED_OUT_MODEL)
@@ -166,8 +170,8 @@ public class DemoDataSeeder implements ApplicationRunner {
                     .campaign(campaign)
                     .percentage(percentages.get(s))
                     .status(RolloutStageStatus.COMPLETED)
-                    .startedAt(start.plus(Duration.ofHours(24L * s)))
-                    .completedAt(start.plus(Duration.ofHours(24L * s + 2)))
+                    .startedAt(start.plus(Duration.ofSeconds(30L * s)))
+                    .completedAt(start.plus(Duration.ofSeconds(30L * s + 25)))
                     .build());
         }
         campaign.setStages(stages);
@@ -177,7 +181,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         int firstStageSize = (int) Math.ceil(byVin.size() * percentages.get(0) / 100.0);
         for (int i = 0; i < byVin.size(); i++) {
             int stage = i < firstStageSize ? 0 : 1;
-            Instant updateStart = start.plus(Duration.ofHours(24L * stage)).plus(Duration.ofMinutes(i));
+            Instant updateStart = start.plus(Duration.ofSeconds(30L * stage + i));
             updates.save(VehicleUpdateStatus.builder()
                     .vehicle(byVin.get(i))
                     .campaign(saved)
@@ -186,7 +190,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                     .status(UpdateStatus.INSTALLED)
                     .progressPercent(100)
                     .startedAt(updateStart)
-                    .completedAt(updateStart.plus(Duration.ofMinutes(20)))
+                    .completedAt(updateStart.plus(Duration.ofSeconds(8)))
                     .build());
         }
     }
