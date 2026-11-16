@@ -1,47 +1,40 @@
+import { NavLink } from 'react-router-dom';
+import { CloudDownload, Gauge, CarFront, type LucideIcon } from 'lucide-react';
 import { useAuth } from '../context/auth';
-import { Link, useLocation } from 'react-router-dom';
+import Wordmark from './Wordmark';
+import styles from './Sidebar.module.css';
+
+interface NavItem {
+  path: string;
+  label: string;
+  icon: LucideIcon;
+}
 
 export default function Sidebar() {
-  const location = useLocation();
   const { isAdmin } = useAuth();
-  const links = [
-    { path: '/', label: 'Dashboard', icon: '📊' },
-    { path: '/vehicles', label: 'Vehicles', icon: '🚗' },
-    ...(isAdmin ? [{ path: '/rollouts', label: 'OTA Updates', icon: '☁️' }] : [])
+  const links: NavItem[] = [
+    { path: '/', label: 'Overview', icon: Gauge },
+    { path: '/vehicles', label: 'Vehicles', icon: CarFront },
+    ...(isAdmin ? [{ path: '/rollouts', label: 'OTA updates', icon: CloudDownload }] : []),
   ];
 
   return (
-    <aside style={{
-      width: '250px',
-      backgroundColor: 'var(--color-bg-secondary)',
-      borderRight: '1px solid var(--color-border)',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '1.5rem 1rem'
-    }}>
-      <div style={{ padding: '0 1rem 2rem' }}>
-        <h2 className="text-gradient" style={{ margin: 0, fontSize: '1.5rem' }}>⚡ PULSE</h2>
+    <aside className={styles.sidebar}>
+      <div className={styles.brand}>
+        <Wordmark />
+        <span className={styles.product}>Fleet console</span>
       </div>
-      
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {links.map(link => {
-          const isActive = location.pathname === link.path || (link.path !== '/' && location.pathname.startsWith(link.path));
-          return (
-            <Link key={link.path} to={link.path} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '1rem',
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-              color: isActive ? 'var(--color-accent-primary)' : 'var(--color-text-secondary)',
-              fontWeight: isActive ? 600 : 400,
-            }}>
-              <span style={{ fontSize: '1.2rem' }}>{link.icon}</span>
-              {link.label}
-            </Link>
-          );
-        })}
+      <nav aria-label="Main">
+        <ul className={styles.nav}>
+          {links.map(({ path, label, icon: Icon }) => (
+            <li key={path}>
+              <NavLink to={path} end={path === '/'} className={({ isActive }) => `${styles.link} ${isActive ? styles.active : ''}`}>
+                <Icon size={18} strokeWidth={1.75} aria-hidden />
+                {label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
       </nav>
     </aside>
   );

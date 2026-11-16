@@ -2,18 +2,19 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import LiveNotifications from './LiveNotifications';
+import styles from './Layout.module.css';
 
 export default function Layout() {
   return (
-    <div className="layout-container">
+    <div className={styles.layout}>
       <LiveNotifications />
       <Sidebar />
-      <main className="main-content">
+      <div className={styles.main}>
         <Header />
-        <div className="page-content">
+        <main className={styles.content}>
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

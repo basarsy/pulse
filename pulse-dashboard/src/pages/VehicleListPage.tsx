@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Badge from '../components/Badge';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Plus, X } from 'lucide-react';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
+import PageHeader from '../components/PageHeader';
+import Panel from '../components/Panel';
+import ProgressBar from '../components/ProgressBar';
+import Status from '../components/Status';
 import { vehicleApi } from '../api/endpoints';
 import { useAuth } from '../context/auth';
 import { useAsync } from '../hooks/useAsync';
-import { connectivityColor, num, timeAgo } from '../utils/format';
+import { connectivityTone, label, num, timeAgo } from '../utils/format';
+import styles from './VehicleListPage.module.css';
 
 function RegisterVehicleForm({ onRegistered }: { onRegistered: () => void }) {
   const [vin, setVin] = useState('');
@@ -24,96 +30,106 @@ function RegisterVehicleForm({ onRegistered }: { onRegistered: () => void }) {
       setModel('');
       onRegistered();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not register vehicle');
+      setError(err instanceof Error ? err.message : 'Could not register the vehicle');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <form className="glass-panel" onSubmit={submit} style={{ padding: '1.5rem', marginBottom: '2rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
-      <div className="form-group" style={{ margin: 0 }}>
-        <label className="form-label">VIN (17 characters)</label>
-        <input className="form-input" required minLength={17} maxLength={17} value={vin} onChange={e => setVin(e.target.value)} />
-      </div>
-      <div className="form-group" style={{ margin: 0 }}>
-        <label className="form-label">Model</label>
-        <input className="form-input" required value={model} onChange={e => setModel(e.target.value)} placeholder="BMW iX xDrive50" />
-      </div>
-      <div className="form-group" style={{ margin: 0 }}>
-        <label className="form-label">Year</label>
-        <input className="form-input" type="number" required min={1990} max={2100} value={modelYear} onChange={e => setModelYear(Number(e.target.value))} />
-      </div>
-      <Button type="submit" isLoading={saving}>Register</Button>
-      {error && <div style={{ gridColumn: '1 / -1', color: 'var(--color-danger)' }}>{error}</div>}
-    </form>
+    <Panel title="Register a vehicle" className={styles.formPanel}>
+      <form onSubmit={submit} className={styles.form}>
+        <div className="field">
+          <label htmlFor="vin">VIN</label>
+          <input id="vin" className="input mono" required minLength={17} maxLength={17} value={vin}
+                 onChange={e => setVin(e.target.value)} placeholder="17 characters" />
+        </div>
+        <div className="field">
+          <label htmlFor="model">Model</label>
+          <input id="model" className="input" required value={model} onChange={e => setModel(e.target.value)} placeholder="e.g. Pulse Aurora" />
+        </div>
+        <div className="field">
+          <label htmlFor="year">Year</label>
+          <input id="year" className="input mono" type="number" required min={1990} max={2100} value={modelYear}
+                 onChange={e => setModelYear(Number(e.target.value))} />
+        </div>
+        <Button type="submit" isLoading={saving}>Register</Button>
+        {error && <p className={`error ${styles.formError}`} role="alert">{error}</p>}
+      </form>
+    </Panel>
   );
 }
 
 export default function VehicleListPage() {
-  const navigate = useNavigate();
   const { isAdmin } = useAuth();
-  const [showForm, setShowForm] = useState(false);
+  // ?register=1 (the overview's "Register a vehicle" shortcut) opens the form straight away.
+  const [searchParams] = useSearchParams();
+  const [showForm, setShowForm] = useState(searchParams.get('register') === '1');
   // Connectivity is not pushed over WebSocket, so the list refreshes periodically.
   const { data: vehicles, error, loading, reload } = useAsync(isAdmin ? vehicleApi.fleet : vehicleApi.mine, [isAdmin], 15000);
+  const online = vehicles?.filter(v => v.connectivityState === 'ONLINE').length ?? 0;
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>{isAdmin ? 'Fleet Vehicles' : 'My Vehicles'}</h2>
-        <Button variant={showForm ? 'secondary' : 'primary'} onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Close' : '+ Register Vehicle'}
-        </Button>
-      </div>
-
+      <PageHeader
+        title={isAdmin ? 'Fleet' : 'My vehicles'}
+        meta={vehicles && vehicles.length > 0 && <span className="mono">{vehicles.length} vehicles · {online} online</span>}
+        actions={
+          <Button variant={showForm ? 'secondary' : 'primary'} icon={showForm ? X : Plus} onClick={() => setShowForm(!showForm)}>
+            {showForm ? 'Close' : 'Register vehicle'}
+          </Button>
+        }
+      />
       {showForm && <RegisterVehicleForm onRegistered={() => { setShowForm(false); reload(); }} />}
-      {error && <div style={{ color: 'var(--color-danger)', marginBottom: '1rem' }}>{error}</div>}
-      {loading && !vehicles && <div>Loading vehicles…</div>}
-      {vehicles?.length === 0 && (
-        <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-          No vehicles yet. Register one to start sending remote commands.
-        </div>
-      )}
+      {error && <p className="error" role="alert">{error}</p>}
 
-      <div className="grid-cards">
-        {vehicles?.map(v => (
-          <div
-            key={v.id}
-            className="glass-panel"
-            style={{ padding: '1.5rem', cursor: 'pointer', transition: 'transform 0.2s ease' }}
-            onClick={() => navigate(`/vehicles/${v.id}`)}
-            onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-5px)')}
-            onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{v.modelYear} {v.model}</h3>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>VIN: {v.vin}</div>
-              </div>
-              <Badge color={connectivityColor[v.connectivityState]}>{v.connectivityState}</Badge>
-            </div>
-
-            <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{
-                width: '50px', height: '50px', borderRadius: '50%',
-                background: `conic-gradient(var(--color-accent-primary) ${v.batteryOrFuelLevel ?? 0}%, rgba(255,255,255,0.1) 0)`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
-              }}>
-                <div style={{
-                  width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--color-bg-secondary)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold'
-                }}>
-                  {num(v.batteryOrFuelLevel, 0, '%')}
-                </div>
-              </div>
-              <div style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
-                <div>Software {v.currentSoftwareVersion ?? 'unknown'}</div>
-                <div>Last seen {timeAgo(v.lastSeenAt)}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <Panel flush>
+        {loading && !vehicles && <EmptyState>Loading vehicles…</EmptyState>}
+        {vehicles?.length === 0 && (
+          <EmptyState action={!showForm && <Button variant="secondary" icon={Plus} onClick={() => setShowForm(true)}>Register vehicle</Button>}>
+            No vehicles yet. Register one to start sending remote commands.
+          </EmptyState>
+        )}
+        {vehicles && vehicles.length > 0 && (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Vehicle</th>
+                <th className={styles.vin}>VIN</th>
+                <th>Status</th>
+                <th>Battery</th>
+                <th>Software</th>
+                <th>Last seen</th>
+                {isAdmin && <th>Owner</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {vehicles.map(v => (
+                <tr key={v.id}>
+                  <td>
+                    <Link to={`/vehicles/${v.id}`} className="row-link">{v.model}</Link>
+                    <span className="muted mono"> {v.modelYear}</span>
+                  </td>
+                  <td className={`mono muted ${styles.vin}`}>{v.vin}</td>
+                  <td><Status tone={connectivityTone[v.connectivityState]}>{label(v.connectivityState)}</Status></td>
+                  <td>
+                    {v.batteryOrFuelLevel === null ? <span className="muted">—</span> : (
+                      <div className={styles.battery}>
+                        <ProgressBar value={v.batteryOrFuelLevel} size="sm" label={`Battery of ${v.vin}`}
+                                     tone={v.batteryOrFuelLevel < 20 ? 'bad' : 'ok'} />
+                        <span className="mono">{num(v.batteryOrFuelLevel, 0, '%')}</span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="mono">{v.currentSoftwareVersion ?? '—'}</td>
+                  <td className="muted">{timeAgo(v.lastSeenAt)}</td>
+                  {isAdmin && <td className="muted">{v.ownerEmail}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
     </div>
   );
 }

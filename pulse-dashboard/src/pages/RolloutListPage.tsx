@@ -1,12 +1,18 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Badge from '../components/Badge';
+import { Plus, X } from 'lucide-react';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
+import PageHeader from '../components/PageHeader';
+import Panel from '../components/Panel';
+import ProgressBar from '../components/ProgressBar';
+import Status from '../components/Status';
 import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign, SoftwareVersion } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignColor, campaignProgress, label, upsertById } from '../utils/format';
+import { campaignBar, campaignTone, label, timeAgo, upsertById } from '../utils/format';
+import styles from './RolloutListPage.module.css';
 
 function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void }) {
   const [form, setForm] = useState({ versionLabel: '', packageUrl: '', checksum: '', releaseNotes: '' });
@@ -19,26 +25,29 @@ function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void
       onCreated(await otaApi.createVersion(form.versionLabel, form.packageUrl, form.checksum, form.releaseNotes));
       setForm({ versionLabel: '', packageUrl: '', checksum: '', releaseNotes: '' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create version');
+      setError(err instanceof Error ? err.message : 'Could not add the version');
     }
   };
 
-  const field = (key: keyof typeof form, title: string, placeholder = '') => (
-    <div className="form-group" style={{ margin: 0 }}>
-      <label className="form-label">{title}</label>
-      <input className="form-input" required={key !== 'releaseNotes'} placeholder={placeholder}
+  const field = (key: keyof typeof form, title: string, placeholder = '', mono = false) => (
+    <div className="field">
+      <label htmlFor={`version-${key}`}>{title}</label>
+      <input id={`version-${key}`} className={`input ${mono ? 'mono' : ''}`} required={key !== 'releaseNotes'} placeholder={placeholder}
              value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} />
     </div>
   );
 
   return (
-    <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 2fr auto', gap: '1rem', alignItems: 'end' }}>
-      {field('versionLabel', 'Version', '2026.11.1')}
-      {field('packageUrl', 'Package URL', 'https://ota.example.com/pkg.bin')}
-      {field('checksum', 'Checksum', 'sha256:…')}
-      {field('releaseNotes', 'Release notes')}
-      <Button type="submit" variant="secondary">Add version</Button>
-      {error && <div style={{ gridColumn: '1 / -1', color: 'var(--color-danger)' }}>{error}</div>}
+    <form onSubmit={submit} className={styles.step} aria-labelledby="new-version">
+      <h3 id="new-version" className="eyebrow">1 · Software version</h3>
+      <div className={styles.versionFields}>
+        {field('versionLabel', 'Version', '2026.11.1', true)}
+        {field('packageUrl', 'Package URL', 'https://ota.example.com/pkg.bin', true)}
+        {field('checksum', 'Checksum', 'sha256:…', true)}
+        {field('releaseNotes', 'Release notes (optional)')}
+        <Button type="submit" variant="secondary">Add version</Button>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
     </form>
   );
 }
@@ -66,36 +75,42 @@ function NewRolloutForm({ onCreated }: { onCreated: (c: Campaign) => void }) {
     try {
       onCreated(await otaApi.createCampaign(versionId, targetModel, percentages, threshold));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create rollout');
+      setError(err instanceof Error ? err.message : 'Could not create the rollout');
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className={styles.forms}>
+      <p className="muted">Pick an existing version, or add a new one first. A rollout reaches a growing share of one model&apos;s fleet,
+        stage by stage, and pauses itself if too many installs in a stage fail.</p>
       <NewVersionForm onCreated={v => { versions.setData(list => [v, ...(list ?? [])]); setVersionId(v.id); }} />
-      <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Software version</label>
-          <select className="form-input" required value={versionId} onChange={e => setVersionId(e.target.value)}>
-            <option value="">Select…</option>
-            {versions.data?.map(v => <option key={v.id} value={v.id}>{v.versionLabel}</option>)}
-          </select>
+      <form onSubmit={submit} className={styles.step} aria-labelledby="new-rollout">
+        <h3 id="new-rollout" className="eyebrow">2 · Rollout</h3>
+        <div className={styles.rolloutFields}>
+          <div className="field">
+            <label htmlFor="rollout-version">Software version</label>
+            <select id="rollout-version" className="input mono" required value={versionId} onChange={e => setVersionId(e.target.value)}>
+              <option value="">Select…</option>
+              {versions.data?.map(v => <option key={v.id} value={v.id}>{v.versionLabel}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="rollout-model">Target model</label>
+            <input id="rollout-model" className="input" required list="fleet-models" value={targetModel} onChange={e => setTargetModel(e.target.value)} />
+            <datalist id="fleet-models">{models.map(m => <option key={m} value={m} />)}</datalist>
+          </div>
+          <div className="field">
+            <label htmlFor="rollout-stages">Stages (% of the model)</label>
+            <input id="rollout-stages" className="input mono" value={stages} onChange={e => setStages(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="rollout-threshold">Pause above (% failed)</label>
+            <input id="rollout-threshold" className="input mono" type="number" min={0} max={100} value={threshold}
+                   onChange={e => setThreshold(Number(e.target.value))} />
+          </div>
+          <Button type="submit">Create rollout</Button>
         </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Target model</label>
-          <input className="form-input" required list="fleet-models" value={targetModel} onChange={e => setTargetModel(e.target.value)} />
-          <datalist id="fleet-models">{models.map(m => <option key={m} value={m} />)}</datalist>
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Stages (%)</label>
-          <input className="form-input" value={stages} onChange={e => setStages(e.target.value)} />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Pause above (% failed)</label>
-          <input className="form-input" type="number" min={0} max={100} value={threshold} onChange={e => setThreshold(Number(e.target.value))} />
-        </div>
-        <Button type="submit">Create rollout</Button>
-        {error && <div style={{ gridColumn: '1 / -1', color: 'var(--color-danger)' }}>{error}</div>}
+        {error && <p className="error" role="alert">{error}</p>}
       </form>
     </div>
   );
@@ -108,52 +123,52 @@ export default function RolloutListPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>OTA Campaigns</h2>
-        <Button variant={showForm ? 'secondary' : 'primary'} onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Close' : '+ New Rollout'}
-        </Button>
-      </div>
-
+      <PageHeader
+        title="OTA updates"
+        meta="Software rollouts, stage by stage."
+        actions={
+          <Button variant={showForm ? 'secondary' : 'primary'} icon={showForm ? X : Plus} onClick={() => setShowForm(!showForm)}>
+            {showForm ? 'Close' : 'New rollout'}
+          </Button>
+        }
+      />
       {showForm && (
-        <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
+        <Panel title="New rollout" className={styles.formPanel}>
           <NewRolloutForm onCreated={c => { campaigns.setData(list => upsertById(list, c)); setShowForm(false); }} />
-        </div>
+        </Panel>
       )}
-      {campaigns.error && <div style={{ color: 'var(--color-danger)' }}>{campaigns.error}</div>}
+      {campaigns.error && <p className="error" role="alert">{campaigns.error}</p>}
 
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
-        <table>
-          <thead>
-            <tr><th>Version</th><th>Target model</th><th>Status</th><th>Stage</th><th>Progress</th><th /></tr>
-          </thead>
-          <tbody>
-            {campaigns.data?.length === 0 && (
-              <tr><td colSpan={6} style={{ color: 'var(--color-text-secondary)' }}>No rollouts yet.</td></tr>
-            )}
-            {campaigns.data?.map(c => {
-              const progress = campaignProgress(c);
-              return (
+      <Panel flush>
+        {campaigns.data?.length === 0 ? (
+          <EmptyState>No rollouts yet. Create one to send a software version to part of the fleet.</EmptyState>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr><th>Version</th><th>Target model</th><th>Status</th><th>Stage</th><th>Progress</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+              {campaigns.data?.map(c => (
                 <tr key={c.id}>
-                  <td style={{ fontWeight: 600 }}>{c.softwareVersion.versionLabel}</td>
+                  <td><Link to={`/rollouts/${c.id}`} className="row-link mono">{c.softwareVersion.versionLabel}</Link></td>
                   <td>{c.targetModel}</td>
-                  <td><Badge color={campaignColor[c.status]}>{label(c.status)}</Badge></td>
-                  <td>{Math.min(c.currentStageIndex + 1, c.stages.length)} / {c.stages.length}</td>
+                  <td><Status tone={campaignTone[c.status]}>{label(c.status)}</Status></td>
+                  <td className="mono">{Math.min(c.currentStageIndex + 1, c.stages.length)} of {c.stages.length}</td>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <div style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{ width: `${progress}%`, height: '100%', background: c.status === 'COMPLETED' ? 'var(--color-success)' : 'var(--color-accent-primary)' }} />
-                      </div>
-                      <span style={{ fontSize: '0.875rem' }}>{c.vehiclesInstalled}/{c.totalVehiclesTargeted}</span>
+                    <div className={styles.progress}>
+                      <ProgressBar size="sm" label={`Rollout ${c.softwareVersion.versionLabel} progress`}
+                                   value={campaignBar(c).installed} failed={campaignBar(c).failed}
+                                   tone={c.status === 'COMPLETED' ? 'ok' : 'accent'} />
+                      <span className="mono muted">{c.vehiclesInstalled}/{c.totalVehiclesTargeted}</span>
                     </div>
                   </td>
-                  <td><Link to={`/rollouts/${c.id}`} style={{ fontSize: '0.875rem' }}>Details</Link></td>
+                  <td className="muted">{timeAgo(c.createdAt)}</td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
     </div>
   );
 }

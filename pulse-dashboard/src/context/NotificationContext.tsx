@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import Toast from '../components/Toast';
+import Toast, { ToastStack } from '../components/Toast';
 import { NotificationContext, type Notification } from './notifications';
 
 export const NotificationProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
@@ -29,11 +29,11 @@ export const NotificationProvider: React.FC<{children: React.ReactNode}> = ({ ch
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, addNotification, markAsRead, markAllAsRead }}>
       {children}
-      <div style={{ position: 'fixed', top: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <ToastStack>
         {notifications.filter(n => !n.read).slice(0, 3).map(n => (
           <Toast key={n.id} notification={n} onClose={() => markAsRead(n.id)} />
         ))}
-      </div>
+      </ToastStack>
     </NotificationContext.Provider>
   );
 };

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth';
+import AuthShell from '../components/AuthShell';
 import Button from '../components/Button';
+import styles from '../components/AuthShell.module.css';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -21,38 +23,26 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Sign-in failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'radial-gradient(circle at top right, rgba(59, 130, 246, 0.2), transparent 40%), var(--color-bg-primary)'
-    }}>
-      <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '2.5rem' }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Sign in to <span className="text-gradient">Pulse</span></h2>
-
-        {error && <div style={{ color: 'var(--color-danger)', marginBottom: '1rem', textAlign: 'center' }}>{error}</div>}
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input type="email" required className="form-input" value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input type="password" required className="form-input" value={password} onChange={e => setPassword(e.target.value)} />
-          </div>
-          <Button type="submit" style={{ width: '100%' }} isLoading={loading}>Sign In</Button>
-        </form>
-
-        <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>
-          Don't have an account? <Link to="/register">Register</Link>
+    <AuthShell title="Sign in" footer={<>New here? <Link to="/register">Create an account</Link></>}>
+      <form className={styles.form} onSubmit={handleSubmit}>
+        <div className="field">
+          <label htmlFor="email">Email</label>
+          <input id="email" type="email" required autoComplete="email" className="input" value={email} onChange={e => setEmail(e.target.value)} />
         </div>
-      </div>
-    </div>
+        <div className="field">
+          <label htmlFor="password">Password</label>
+          <input id="password" type="password" required autoComplete="current-password" className="input" value={password} onChange={e => setPassword(e.target.value)} />
+        </div>
+        {error && <p className="error" role="alert">{error}</p>}
+        <Button type="submit" className={styles.submit} isLoading={loading}>Sign in</Button>
+      </form>
+    </AuthShell>
   );
 }

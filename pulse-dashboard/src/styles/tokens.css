@@ -1,0 +1,65 @@
+/*
+ * Design tokens: the only place raw colours live. "Instrument cluster": warm graphite surfaces,
+ * one amber accent, status colours used only for status.
+ */
+:root {
+  /* Surfaces */
+  --bg: #121110;
+  --surface: #1a1917;
+  --surface-raised: #23211e;
+  --rule: #2f2c28;
+  --rule-strong: #3d3934;
+  /* Borders of form controls: at least 3:1 against the page (WCAG 1.4.11). */
+  --control-border: #6b655c;
+
+  /* Text */
+  --text: #ece8e1;
+  --text-muted: #a39d93;
+
+  /* Accent: primary actions, focus, active navigation, progress */
+  --accent: #f0a83a;
+  --accent-hover: #f5b955;
+  --accent-soft: rgba(240, 168, 58, 0.12);
+  --on-accent: #1a1206;
+
+  /* Status */
+  --ok: #6cc58a;
+  --warn: #e5c547;
+  --bad: #ef6b5e;
+  --bad-soft: rgba(239, 107, 94, 0.12);
+  --info: #7fb0e0;
+  --neutral: #8f897f;
+
+  /* Type */
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+
+  /* Space */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Shape and motion */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+  }
+}
