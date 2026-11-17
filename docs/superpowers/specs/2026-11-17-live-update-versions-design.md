@@ -35,7 +35,7 @@ update.
 
 | Option | Verdict |
 |---|---|
-| **The row's own JPA `@Version`** | **Chosen.** Every writer to a row either holds its row lock (rollouts are loaded `FOR UPDATE`, and vehicle OTA statuses are only changed under their rollout's lock; the demo seeder only inserts them at startup) or is checked by optimistic locking (commands, since V6). So versions grow in commit order, on any pod, with no new infrastructure. |
+| **The row's own JPA `@Version`** | **Chosen.** Apart from the demo seeder at startup (it inserts rows and adjusts creation dates), every writer to a row either holds its row lock (rollouts are loaded `FOR UPDATE`, and vehicle OTA statuses are only changed under their rollout's lock) or is checked by optimistic locking (commands, since V6). So versions grow in commit order, on any pod, with no new infrastructure. |
 | A Postgres sequence or Redis `INCR` taken at publish time | Rejected. The number is taken before commit, so two transactions can take numbers in the opposite order to their commits. |
 | Timestamps | Rejected. Clocks differ between pods, and two updates can share a millisecond. |
 
@@ -59,12 +59,17 @@ after commit catches a path that forgets.
 `vehicle_update_status`. A stage finishing, or a vehicle finishing its update, changes what
 `CampaignResponse` shows while `rollout_campaigns.version` stays put.
 
-Fix: a rollout's version is the version of the whole rollout as shown. Every transaction that
-changes it raises the version explicitly with `PESSIMISTIC_FORCE_INCREMENT` on the row it already
-holds `FOR UPDATE`: before each rollout update is published, and once per vehicle progress event
-(which changes the counts). It costs one `UPDATE` on an already-locked row per event. Because each
-force increment raises the version again, two rollout updates published in one transaction
-(a stage finishing and the next one starting) also carry different versions.
+Fix: a rollout's version is the version of the whole rollout as shown. It is raised explicitly,
+on the row the transaction already holds `FOR UPDATE`: before each rollout update is published,
+and once per applied vehicle progress event (which changes the counts). Each raise flushes pending
+changes, runs `UPDATE … SET version = version + 1`, and refreshes the entity so it holds the new
+version. That costs an `UPDATE` and a re-read per raise, on a row already locked.
+
+Not `lock(PESSIMISTIC_FORCE_INCREMENT)`, the first version of this change: Hibernate 6.5 runs it
+once per transaction and skips later calls (the entity already holds that lock mode). Two rollout
+updates in one transaction then only got different versions when the rollout row itself changed in
+between, which every current path happens to do, but nothing enforced. `RolloutVersionTest`
+publishes twice in one transaction without a change in between and failed with it.
 
 ## Dashboard
 
@@ -93,6 +98,9 @@ connection as in `LiveUpdatesWebSocketTest`:
 - **Vehicle OTA status:** the same for one vehicle's update, `PENDING` to `INSTALLED`.
 - **Rollouts:** a rollout with two stages runs to `COMPLETED`; every published rollout update has a
   distinct, increasing version in lifecycle order, and the last equals the REST read.
+
+- **Two rollout updates in one transaction** (`RolloutVersionTest`): published without a change to
+  the rollout in between, they still get two versions, and the second is the one committed.
 
 `ResponseMappingContractTest` and `DtoJsonContractTest` pin the JSON shape, so they gain `version`.
 

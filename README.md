@@ -190,14 +190,14 @@ sequenceDiagram
 
 - **Problem:** two updates committed a few milliseconds apart, on different threads or pods, can reach a browser in either order (decision 5), and the dashboard showed whichever arrived last. A command could show `SENT` after `ACKNOWLEDGED` (the first is sent from the request thread, the second from the Kafka listener that handles the vehicle's reply), or a rollout could show a stage it had already left (its updates are triggered by different vehicles' events, on different threads). A page load races updates the same way: a load that read the database before a commit can resolve after that commit's update.
 - **Decision:**
-  - Every command, vehicle OTA update and rollout carries `version`, in live updates and REST responses alike: its row's JPA `@Version`. Each writer to these rows either holds the rollout's row lock (rollouts, and their vehicles' updates) or is checked by optimistic locking (commands), so the version grows in commit order, on any pod. Vehicle OTA updates got a `version` column for this.
-  - Hibernate raises the version when it writes the row, which used to happen after the update was built. Paths that publish now save with `saveAndFlush` first, so the update carries the version its transaction commits.
-  - A rollout's update also shows its stages and vehicle counts, which live in other tables and leave the rollout row untouched. Its version is raised explicitly (`PESSIMISTIC_FORCE_INCREMENT` on the row the transaction already holds) before every rollout update and on every vehicle progress event it applies.
+  - Every command, vehicle OTA update and rollout carries `version`, in live updates and REST responses alike: its row's JPA `@Version`. Apart from the demo seeder at startup, each writer to these rows either holds the rollout's row lock (rollouts, and their vehicles' updates) or is checked by optimistic locking (commands), so the version grows in commit order, on any pod. Vehicle OTA updates got a `version` column for this.
+  - Hibernate raises the version when it writes the row, which used to happen after the update was built. Paths that publish a command or a vehicle's OTA update now save with `saveAndFlush` first, so the update carries the version its transaction commits.
+  - A rollout's update also shows its stages and vehicle counts, which live in other tables and leave the rollout row untouched. Its version is raised explicitly before every rollout update and on every vehicle progress event it applies: pending changes are flushed, an `UPDATE … SET version = version + 1` runs on the row the transaction already holds, and the entity is refreshed. Not `PESSIMISTIC_FORCE_INCREMENT`: Hibernate applies that once per transaction, so a second update in the same transaction could repeat a version.
   - On the pages that receive live updates, the dashboard ignores an update or a page load that has a lower version than the item it shows ([`utils/versions.ts`](pulse-dashboard/src/utils/versions.ts)).
 - **Ruled out:**
   - A number from a Postgres sequence or Redis taken when publishing: it is taken before the commit, so two transactions can take numbers in the opposite order to their commits.
   - Timestamps: clocks differ between pods, and two updates can share a millisecond.
-- **Proof:** [`LiveUpdateVersionsTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdateVersionsTest.java) runs a command, a vehicle's OTA update and a two-stage rollout to the end over a real STOMP connection. For each, the versions are distinct, a higher version never shows an earlier state, and the highest equals what the REST API returns afterwards. [`versions.test.ts`](pulse-dashboard/src/utils/versions.test.ts) covers the dashboard's rule.
+- **Proof:** [`LiveUpdateVersionsTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdateVersionsTest.java) runs a command, a vehicle's OTA update and a two-stage rollout to the end over a real STOMP connection. For each, the versions are distinct, a higher version never shows an earlier state, and the highest equals what the REST API returns afterwards. [`RolloutVersionTest`](pulse-monolith/src/test/java/com/pulse/connected/ota/RolloutVersionTest.java) publishes a rollout twice in one transaction, without changing it in between, and gets two versions. [`versions.test.ts`](pulse-dashboard/src/utils/versions.test.ts) covers the dashboard's rule.
 
 ### 7. DTOs are records, and tests pin their JSON
 
@@ -316,7 +316,7 @@ sequenceDiagram
   - Dashboard redesign: design tokens, CSS Modules, real icons, a stage timeline for rollouts, accessible contrast and focus
   - Kubernetes network policies for every component (default deny, proven in a kind cluster in CI) and a Redis password
   - Node 26 (Active LTS) for the dashboard in CI and in its image; CI actions moved off the deprecated Node 20 runtime
-  - Live updates and API responses carry a version, and the dashboard never replaces a command, OTA update or rollout with an older one
+  - Live updates and API responses carry a version, and pages with live updates never replace a command, OTA update or rollout with an older one
 
 </details>
 

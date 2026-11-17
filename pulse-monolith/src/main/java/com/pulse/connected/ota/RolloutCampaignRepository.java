@@ -5,6 +5,7 @@ import com.pulse.connected.domain.CampaignStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -32,4 +33,13 @@ public interface RolloutCampaignRepository extends JpaRepository<RolloutCampaign
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM RolloutCampaign c WHERE c.id = :id")
     Optional<RolloutCampaign> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * Raises the campaign's version by one, in the database only: the caller refreshes the entity
+     * afterwards. Not cleared automatically, so the persistence context (and its other entities)
+     * stay attached.
+     */
+    @Modifying
+    @Query("UPDATE RolloutCampaign c SET c.version = c.version + 1 WHERE c.id = :id")
+    int incrementVersion(@Param("id") UUID id);
 }

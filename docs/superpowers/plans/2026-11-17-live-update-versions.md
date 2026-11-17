@@ -15,7 +15,7 @@ Branch: `feat/live-update-versions`. Integration tests need Docker Desktop runni
 3. **Trap 1, flush before mapping**: `CommandService` publish paths and `dispatchToKafka`, and
    the vehicle OTA status save in `RolloutCampaignService`, use `saveAndFlush`.
 4. **Trap 2, rollout version**: `RolloutCampaignService` raises the rollout's version with
-   `PESSIMISTIC_FORCE_INCREMENT` (after a flush) before each rollout publish and once per vehicle
+   an explicit `version + 1` update (after a flush, then a refresh) before each rollout publish and once per vehicle
    progress event. Step 1 passes. Run the whole backend suite.
 5. **Dashboard**: `version` in `api/types.ts`; version-aware `upsertById` and a `newer(a, b)`
    for single items; `useAsync` takes an optional `merge`; list pages and the rollout page use it.

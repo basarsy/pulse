@@ -14,7 +14,6 @@ import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -337,9 +336,10 @@ public class RolloutCampaignService {
 
     /**
      * Sends the rollout's current state to browsers and returns it. The version is raised first, so
-     * every update carries a version no earlier update of this rollout had (see raiseVersion).
+     * every update carries a version no earlier update of this rollout had, even a second update in
+     * the same transaction (see raiseVersion). Package-private for RolloutVersionTest.
      */
-    private CampaignResponse publishProgress(RolloutCampaign campaign) {
+    CampaignResponse publishProgress(RolloutCampaign campaign) {
         raiseVersion(campaign);
         CampaignResponse response = mapToCampaignResponse(campaign);
         otaWebSocketService.notifyCampaignProgress(campaign.getId(), response);
@@ -349,12 +349,18 @@ public class RolloutCampaignService {
     /**
      * A rollout's version stands for everything its response shows, but stage statuses and the
      * counts live in other tables, so changing them leaves the rollout row (and its version)
-     * untouched. This raises it explicitly, on the row this transaction already holds FOR UPDATE.
-     * Pending changes are flushed first, so the version read afterwards is the one that commits.
+     * untouched. This raises it by one on every call, on the row this transaction already holds
+     * FOR UPDATE, so writers still raise it in commit order.
+     *
+     * <p>Not {@code lock(PESSIMISTIC_FORCE_INCREMENT)}: Hibernate runs that once per transaction and
+     * skips later calls, so a second update in the same transaction would repeat the version. Instead
+     * pending changes are flushed, the version is raised with an UPDATE, and the entity is refreshed
+     * so it holds the new version (and later flushes check against it).
      */
     private void raiseVersion(RolloutCampaign campaign) {
         campaignRepository.flush();
-        entityManager.lock(campaign, LockModeType.PESSIMISTIC_FORCE_INCREMENT);
+        campaignRepository.incrementVersion(campaign.getId());
+        entityManager.refresh(campaign);
     }
 
     /** One grouped query; the result answers stage evaluation and the response alike. */
