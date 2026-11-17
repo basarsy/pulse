@@ -187,7 +187,7 @@ public class CommandService {
         }
         command.setResultMessage(resultMessage);
         
-        RemoteCommand updated = commandRepository.save(command);
+        RemoteCommand updated = commandRepository.saveAndFlush(command);
         log.info("Updated command [{}] status to [{}] with message: {}", commandId, resultStatus, resultMessage);
 
         if (resultStatus == CommandStatus.FAILED) {
@@ -233,7 +233,7 @@ public class CommandService {
         command.setResolvedAt(Instant.now());
         command.setResultMessage("Cancelled by user");
 
-        RemoteCommand saved = commandRepository.save(command);
+        RemoteCommand saved = commandRepository.saveAndFlush(command);
         meterRegistry.counter("pulse.commands.cancelled").increment();
         auditLogService.log(actor.getId(), "COMMAND_CANCELLED", "RemoteCommand", commandId.toString(), null);
         CommandResponse response = mapToResponse(saved);
@@ -300,7 +300,7 @@ public class CommandService {
         command.setResolvedAt(Instant.now());
         command.setResultMessage(message);
 
-        RemoteCommand updated = commandRepository.save(command);
+        RemoteCommand updated = commandRepository.saveAndFlush(command);
         meterRegistry.counter("pulse.commands.timed_out").increment();
         auditLogService.log(command.getIssuedBy().getId(), "COMMAND_TIMED_OUT", "RemoteCommand", command.getId().toString(), null);
         webSocketService.notifyCommandStatusChange(command.getVehicle().getId(), mapToResponse(updated));
@@ -309,7 +309,7 @@ public class CommandService {
     private void dispatchToKafka(RemoteCommand command) {
         command.setStatus(CommandStatus.SENT);
         command.setSentAt(Instant.now());
-        commandRepository.save(command);
+        commandRepository.saveAndFlush(command);
 
         VehicleCommandEvent event = new VehicleCommandEvent(
                 command.getId(),
@@ -322,6 +322,11 @@ public class CommandService {
         eventPublisher.publishEvent(event);
     }
 
+    /**
+     * {@code version} is read from the entity, which Hibernate only raises when it writes the row.
+     * So every path that publishes a command saves it with {@code saveAndFlush} first: the update
+     * then carries the version this transaction commits, which browsers use to order updates.
+     */
     public CommandResponse mapToResponse(RemoteCommand command) {
         return new CommandResponse(
                 command.getId(),
@@ -333,6 +338,7 @@ public class CommandService {
                 command.getSentAt(),
                 command.getResolvedAt(),
                 command.getResultMessage(),
-                command.getIdempotencyKey());
+                command.getIdempotencyKey(),
+                command.getVersion());
     }
 }

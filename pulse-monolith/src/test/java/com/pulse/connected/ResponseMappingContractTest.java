@@ -41,6 +41,8 @@ import org.skyscreamer.jsonassert.JSONCompareMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.json.JsonTest;
 import org.springframework.context.ApplicationEventPublisher;
+import jakarta.persistence.EntityManager;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Duration;
@@ -136,6 +138,7 @@ class ResponseMappingContractTest {
                 .status(RolloutStageStatus.COMPLETED).startedAt(T6).completedAt(T7).build());
         campaign.getStages().add(RolloutStage.builder().id(ID_6).campaign(campaign).percentage(100)
                 .status(RolloutStageStatus.IN_PROGRESS).startedAt(T8).build());
+        ReflectionTestUtils.setField(campaign, "version", 8L);
         return campaign;
     }
 
@@ -149,7 +152,8 @@ class ResponseMappingContractTest {
                 mock(OtaWebSocketService.class),
                 new SoftwareVersionService(mock(SoftwareVersionRepository.class)),
                 mock(AuditLogService.class),
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(),
+                mock(EntityManager.class));
     }
 
     @Test
@@ -177,12 +181,13 @@ class ResponseMappingContractTest {
                 .resultMessage("Engine started")
                 .idempotencyKey("key-4")
                 .build();
+        ReflectionTestUtils.setField(command, "version", 7L);
 
         assertJson(service.mapToResponse(command), """
                 {"id":"00000000-0000-0000-0000-000000000001","vehicleId":"00000000-0000-0000-0000-000000000002",
                  "issuedByUserId":"00000000-0000-0000-0000-000000000007","type":"REMOTE_START","status":"ACKNOWLEDGED",
                  "requestedAt":"2026-01-02T03:04:05Z","sentAt":"2026-01-02T03:04:06Z","resolvedAt":"2026-01-02T03:04:07Z",
-                 "resultMessage":"Engine started","idempotencyKey":"key-4"}
+                 "resultMessage":"Engine started","idempotencyKey":"key-4","version":7}
                 """);
     }
 
@@ -208,7 +213,7 @@ class ResponseMappingContractTest {
                             "startedAt":"2026-01-02T03:04:06Z","completedAt":"2026-01-02T03:04:07Z"},
                            {"id":"00000000-0000-0000-0000-000000000006","percentage":100,"status":"IN_PROGRESS",
                             "startedAt":"2026-01-02T03:04:08Z","completedAt":null}],
-                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2}
+                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2,"version":8}
                 """);
     }
 
@@ -226,13 +231,14 @@ class ResponseMappingContractTest {
                 .completedAt(T6)
                 .errorMessage("boot loop")
                 .build();
+        ReflectionTestUtils.setField(status, "version", 9L);
 
         assertJson(rolloutService(mock(VehicleUpdateStatusRepository.class)).mapToUpdateStatusResponse(status), """
                 {"id":"00000000-0000-0000-0000-000000000006","vehicleId":"00000000-0000-0000-0000-000000000002",
                  "vin":"WVWZZZ1JZXW000001","campaignId":"00000000-0000-0000-0000-000000000001",
                  "targetVersionId":"00000000-0000-0000-0000-000000000004","targetVersionLabel":"v2.1.0",
                  "status":"ROLLED_BACK","progressPercent":63,"startedAt":"2026-01-02T03:04:05Z",
-                 "completedAt":"2026-01-02T03:04:06Z","errorMessage":"boot loop"}
+                 "completedAt":"2026-01-02T03:04:06Z","errorMessage":"boot loop","version":9}
                 """);
     }
 

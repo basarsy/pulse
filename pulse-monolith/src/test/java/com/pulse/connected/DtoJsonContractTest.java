@@ -100,7 +100,7 @@ class DtoJsonContractTest {
                 {"id":"00000000-0000-0000-0000-000000000001","vehicleId":"00000000-0000-0000-0000-000000000002",
                  "issuedByUserId":"00000000-0000-0000-0000-000000000003","type":"REMOTE_START","status":"ACKNOWLEDGED",
                  "requestedAt":"2026-01-02T03:04:05Z","sentAt":"2026-01-02T03:04:06Z","resolvedAt":"2026-01-02T03:04:07Z",
-                 "resultMessage":"Engine started","idempotencyKey":"key-4"}
+                 "resultMessage":"Engine started","idempotencyKey":"key-4","version":7}
                 """);
     }
 
@@ -234,7 +234,7 @@ class DtoJsonContractTest {
                             "startedAt":"2026-01-02T03:04:06Z","completedAt":"2026-01-02T03:04:07Z"},
                            {"id":"00000000-0000-0000-0000-000000000006","percentage":100,"status":"IN_PROGRESS",
                             "startedAt":"2026-01-02T03:04:08Z","completedAt":null}],
-                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2}
+                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2,"version":8}
                 """);
     }
 
@@ -298,7 +298,7 @@ class DtoJsonContractTest {
                  "vin":"WVWZZZ1JZXW000001","campaignId":"00000000-0000-0000-0000-000000000003",
                  "targetVersionId":"00000000-0000-0000-0000-000000000004","targetVersionLabel":"v2.1.0",
                  "status":"ROLLED_BACK","progressPercent":63,"startedAt":"2026-01-02T03:04:05Z",
-                 "completedAt":"2026-01-02T03:04:06Z","errorMessage":"boot loop"}
+                 "completedAt":"2026-01-02T03:04:06Z","errorMessage":"boot loop","version":9}
                 """);
     }
 

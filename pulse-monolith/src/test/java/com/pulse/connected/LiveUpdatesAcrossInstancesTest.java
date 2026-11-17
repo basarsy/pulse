@@ -191,7 +191,8 @@ class LiveUpdatesAcrossInstancesTest extends AbstractIntegrationTest {
                 null,
                 null,
                 null,
-                null);
+                null,
+                0);
     }
 
     /** Everything received in the next 3 seconds that belongs to command {@code id}. */
