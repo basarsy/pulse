@@ -66,7 +66,7 @@ export default function VehicleListPage() {
   const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(searchParams.get('register') === '1');
   // Connectivity is not pushed over WebSocket, so the list refreshes periodically.
-  const { data: vehicles, error, loading, reload } = useAsync(isAdmin ? vehicleApi.fleet : vehicleApi.mine, [isAdmin], 15000);
+  const { data: vehicles, error, loading, reload } = useAsync(isAdmin ? vehicleApi.fleet : vehicleApi.mine, [isAdmin], { pollMs: 15000 });
   const online = vehicles?.filter(v => v.connectivityState === 'ONLINE').length ?? 0;
 
   return (

@@ -70,10 +70,13 @@ force increment raises the version again, two rollout updates published in one t
   than the one shown is ignored. Equal versions are accepted; they are the same committed state
   (for example an action's REST response and its own live update). The rollout detail page uses
   the same rule for its single rollout.
-- **REST loads:** `useAsync` takes an optional `merge(current, loaded)`. The list pages and the
-  rollout page pass a version-aware merge: for each item the higher version wins, and items shown
-  but missing from an older snapshot are kept. Nothing in these lists is ever deleted (cancelling a
-  command is a status change), so keeping them is safe.
+- **REST loads:** `useAsync` takes an optional `merge(shown, loaded)` (and `pollMs` moves into the
+  same options object). The vehicle page's commands and updates, the rollout list, and the rollout
+  page pass a version-aware merge: the loaded list decides which items are shown and their order,
+  and for an item already shown the higher version wins. Items shown but missing from the load are
+  not kept: `useAsync` keeps the previous page's data while it reloads, so keeping them would carry
+  one vehicle's commands over to the next vehicle's page. `newer` also only keeps the shown state
+  when it is the same item, for the same reason on the rollout page.
 - `version` is added to `Command`, `Campaign` and `VehicleUpdate` in `api/types.ts`.
 
 ## Testing
@@ -91,9 +94,9 @@ connection as in `LiveUpdatesWebSocketTest`:
 
 `ResponseMappingContractTest` and `DtoJsonContractTest` pin the JSON shape, so they gain `version`.
 
-Dashboard (Vitest): version-aware upsert ignores lower versions, accepts equal and higher, and
-inserts new items; the REST merge keeps the newer of each item and keeps shown items missing from
-the snapshot.
+Dashboard (Vitest, `utils/versions.test.ts`): version-aware upsert ignores lower versions, accepts
+equal and higher, and inserts new items; the REST merge keeps the newer of each item and shows
+exactly the loaded items.
 
 ## README
 

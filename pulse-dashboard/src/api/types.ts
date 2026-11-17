@@ -54,6 +54,8 @@ export interface Command {
   sentAt: string | null;
   resolvedAt: string | null;
   resultMessage: string | null;
+  /** Higher for every later committed state of this command (see utils/versions). */
+  version: number;
 }
 
 export interface TelemetrySnapshot {
@@ -98,6 +100,8 @@ export interface Campaign {
   totalVehiclesTargeted: number;
   vehiclesInstalled: number;
   vehiclesFailed: number;
+  /** Higher for every later committed state of this rollout (see utils/versions). */
+  version: number;
 }
 
 export interface VehicleUpdate {
@@ -111,4 +115,6 @@ export interface VehicleUpdate {
   startedAt: string | null;
   completedAt: string | null;
   errorMessage: string | null;
+  /** Higher for every later committed state of this update (see utils/versions). */
+  version: number;
 }

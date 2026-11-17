@@ -44,14 +44,6 @@ export const updateTone: Record<UpdateStatus, Tone> = {
   INSTALLED: 'ok', FAILED: 'bad', ROLLED_BACK: 'warn',
 };
 
-/** Upserts {@code item} into a list by id, keeping the list order (new items first). */
-export function upsertById<T extends { id: string }>(list: T[] | undefined, item: T): T[] {
-  const items = list ?? [];
-  return items.some(existing => existing.id === item.id)
-    ? items.map(existing => (existing.id === item.id ? item : existing))
-    : [item, ...items];
-}
-
 /** Share of a campaign's targeted vehicles that have finished (installed or failed), as a whole percent. */
 export function campaignProgress(c: Campaign): number {
   if (!c.totalVehiclesTargeted) return c.status === 'COMPLETED' ? 100 : 0;

@@ -14,7 +14,8 @@ import { vehicleApi } from '../api/endpoints';
 import { COMMAND_TYPES, type Command, type CommandType, type TelemetrySnapshot, type VehicleUpdate } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { commandTone, connectivityTone, dateTime, label, num, timeAgo, updateTone, upsertById } from '../utils/format';
+import { commandTone, connectivityTone, dateTime, label, num, timeAgo, updateTone } from '../utils/format';
+import { mergeLoaded, upsertById } from '../utils/versions';
 import styles from './VehicleDetailPage.module.css';
 
 const TABS = ['overview', 'commands', 'telemetry', 'updates'] as const;
@@ -31,7 +32,7 @@ const COMMAND_ICON: Record<CommandType, LucideIcon> = {
 };
 
 function CommandsTab({ vehicleId }: { vehicleId: string }) {
-  const commands = useAsync(() => vehicleApi.commands(vehicleId), [vehicleId]);
+  const commands = useAsync(() => vehicleApi.commands(vehicleId), [vehicleId], { merge: mergeLoaded });
   const [sending, setSending] = useState<CommandType | null>(null);
   const [error, setError] = useState('');
 
@@ -105,7 +106,7 @@ function CommandsTab({ vehicleId }: { vehicleId: string }) {
 }
 
 function TelemetryTab({ vehicleId }: { vehicleId: string }) {
-  const history = useAsync<TelemetrySnapshot[]>(() => vehicleApi.telemetryHistory(vehicleId), [vehicleId], 20000);
+  const history = useAsync<TelemetrySnapshot[]>(() => vehicleApi.telemetryHistory(vehicleId), [vehicleId], { pollMs: 20000 });
   return (
     <Panel title="Telemetry" aside="Newest first" flush>
       {history.data?.length === 0 ? (
@@ -133,7 +134,7 @@ function TelemetryTab({ vehicleId }: { vehicleId: string }) {
 }
 
 function UpdatesTab({ vehicleId }: { vehicleId: string }) {
-  const updates = useAsync<VehicleUpdate[]>(() => vehicleApi.updates(vehicleId), [vehicleId]);
+  const updates = useAsync<VehicleUpdate[]>(() => vehicleApi.updates(vehicleId), [vehicleId], { merge: mergeLoaded });
   useTopic<VehicleUpdate>(`/topic/vehicles/${vehicleId}/update-status`, update =>
     updates.setData(list => upsertById(list, update)));
 
@@ -167,7 +168,7 @@ function UpdatesTab({ vehicleId }: { vehicleId: string }) {
 export default function VehicleDetailPage() {
   const { id = '' } = useParams();
   const [tab, setTab] = useState<Tab>('overview');
-  const { data: vehicle, error } = useAsync(() => vehicleApi.get(id), [id], 15000);
+  const { data: vehicle, error } = useAsync(() => vehicleApi.get(id), [id], { pollMs: 15000 });
 
   if (error) return <p className="error" role="alert">{error}</p>;
   if (!vehicle) return <p className="muted">Loading vehicle…</p>;

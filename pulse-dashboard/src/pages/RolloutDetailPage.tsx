@@ -15,6 +15,7 @@ import type { Campaign, CampaignStatus } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
 import { campaignBar, campaignProgress, campaignTone, dateTime, label, updateTone } from '../utils/format';
+import { mergeLoaded, newer } from '../utils/versions';
 import styles from './RolloutDetailPage.module.css';
 
 type Action = 'start' | 'pause' | 'resume' | 'abort';
@@ -36,13 +37,13 @@ const ACTION_UI: Record<Action, { text: string; icon: LucideIcon; variant: 'prim
 
 export default function RolloutDetailPage() {
   const { id = '' } = useParams();
-  const campaign = useAsync(() => otaApi.campaign(id), [id]);
-  const vehicles = useAsync(() => otaApi.campaignVehicles(id), [id]);
+  const campaign = useAsync(() => otaApi.campaign(id), [id], { merge: newer });
+  const vehicles = useAsync(() => otaApi.campaignVehicles(id), [id], { merge: mergeLoaded });
   const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState('');
 
   useTopic<Campaign>(`/topic/rollouts/${id}`, update => {
-    campaign.setData(update);
+    campaign.setData(shown => newer(shown, update));
     vehicles.reload();
   });
 
@@ -50,7 +51,8 @@ export default function RolloutDetailPage() {
     setBusy(action);
     setError('');
     try {
-      campaign.setData(await otaApi.action(id, action));
+      const response = await otaApi.action(id, action);
+      campaign.setData(shown => newer(shown, response));
       vehicles.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : `Could not ${action} the rollout`);
