@@ -302,7 +302,7 @@ sequenceDiagram
   - Demo data for the local stack (`DEMO_ENABLED`) and a script that re-captures the README screenshot and GIF
   - Dashboard redesign: design tokens, CSS Modules, real icons, a stage timeline for rollouts, accessible contrast and focus
   - Kubernetes network policies for every component (default deny, proven in a kind cluster in CI) and a Redis password
-  - Node 26 (current LTS) for the dashboard in CI and in its image; CI actions moved off the deprecated Node 20 runtime
+  - Node 26 (Active LTS) for the dashboard in CI and in its image; CI actions moved off the deprecated Node 20 runtime
 
 </details>
 
@@ -354,7 +354,7 @@ pulse/
 ### Prerequisites
 
 - Java 21+
-- Node.js 26 (current LTS; what CI and the dashboard image use)
+- Node.js 26 (Active LTS; what CI and the dashboard image use)
 - Docker & Docker Compose
 
 ### Option A: everything in Docker
