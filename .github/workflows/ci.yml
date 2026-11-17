@@ -13,10 +13,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -27,14 +27,14 @@ jobs:
         run: mvn -B -ntp verify
 
       - name: Upload application JAR
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pulse-app-jar
           path: pulse-monolith/target/pulse-monolith-*.jar
           retention-days: 7
 
       - name: Upload module documentation
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: spring-modulith-docs
           path: pulse-monolith/target/spring-modulith-docs
@@ -49,7 +49,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Render kustomization
         run: |
@@ -62,13 +62,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # kind ≥ 0.24: its default network plugin enforces NetworkPolicies.
       - name: Create kind cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.15.2
         with:
-          version: v0.24.0
+          version: v0.33.0
 
       - name: Only the app reaches Redis, and only with the password
         run: bash k8s/tests/network-policies.sh
@@ -79,12 +79,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: pulse-dashboard/package-lock.json
 
