@@ -16,5 +16,6 @@ public record CommandResponse(
         Instant sentAt,
         Instant resolvedAt,
         String resultMessage,
-        String idempotencyKey) {
+        String idempotencyKey,
+        long version) {
 }

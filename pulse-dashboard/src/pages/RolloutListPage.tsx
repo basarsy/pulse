@@ -11,7 +11,8 @@ import { otaApi, vehicleApi } from '../api/endpoints';
 import type { Campaign, SoftwareVersion } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignBar, campaignTone, label, timeAgo, upsertById } from '../utils/format';
+import { campaignBar, campaignTone, label, timeAgo } from '../utils/format';
+import { mergeLoaded, upsertById } from '../utils/versions';
 import styles from './RolloutListPage.module.css';
 
 function NewVersionForm({ onCreated }: { onCreated: (v: SoftwareVersion) => void }) {
@@ -118,7 +119,7 @@ function NewRolloutForm({ onCreated }: { onCreated: (c: Campaign) => void }) {
 
 export default function RolloutListPage() {
   const [showForm, setShowForm] = useState(false);
-  const campaigns = useAsync(otaApi.campaigns, []);
+  const campaigns = useAsync(otaApi.campaigns, [], { merge: mergeLoaded });
   useTopic<Campaign>('/topic/rollouts/*', campaign => campaigns.setData(list => upsertById(list, campaign)));
 
   return (

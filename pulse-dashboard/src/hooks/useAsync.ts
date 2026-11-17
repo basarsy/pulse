@@ -8,21 +8,33 @@ interface AsyncState<T> {
   setData: React.Dispatch<React.SetStateAction<T | undefined>>;
 }
 
-/**
- * Loads data on mount and whenever {@code deps} change; optionally refreshes every
- * {@code pollMs} milliseconds (for state that is not pushed over WebSocket).
- */
-export function useAsync<T>(load: () => Promise<T>, deps: unknown[], pollMs?: number): AsyncState<T> {
+interface AsyncOptions<T> {
+  /** Refresh every this many milliseconds (for state that is not pushed over WebSocket). */
+  pollMs?: number;
+  /**
+   * Combines a load with what is shown, instead of replacing it. Pages that also receive live
+   * updates pass a version-aware merge (utils/versions), so a load that read the database before
+   * an update was committed can't overwrite that update when it resolves after it.
+   */
+  merge?: (shown: T | undefined, loaded: T) => T;
+}
+
+/** Loads data on mount and whenever {@code deps} change. */
+export function useAsync<T>(load: () => Promise<T>, deps: unknown[], options: AsyncOptions<T> = {}): AsyncState<T> {
+  const { pollMs } = options;
   const [data, setData] = useState<T>();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const loader = useRef(load);
   loader.current = load;
+  const merger = useRef(options.merge);
+  merger.current = options.merge;
 
   const reload = useCallback(() => {
     loader.current()
       .then(result => {
-        setData(result);
+        const merge = merger.current;
+        setData(shown => (merge ? merge(shown, result) : result));
         setError(null);
       })
       .catch((e: Error) => setError(e.message))

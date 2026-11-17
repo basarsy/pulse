@@ -13,6 +13,7 @@ import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.persistence.EntityManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,7 @@ public class RolloutCampaignService {
     private final SoftwareVersionService softwareVersionService;
     private final AuditLogService auditLogService;
     private final MeterRegistry meterRegistry;
+    private final EntityManager entityManager;
 
     public RolloutCampaignService(
             RolloutCampaignRepository campaignRepository,
@@ -52,7 +54,8 @@ public class RolloutCampaignService {
             OtaWebSocketService otaWebSocketService,
             SoftwareVersionService softwareVersionService,
             AuditLogService auditLogService,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            EntityManager entityManager) {
         this.campaignRepository = campaignRepository;
         this.softwareVersionRepository = softwareVersionRepository;
         this.vehicleRepository = vehicleRepository;
@@ -62,6 +65,7 @@ public class RolloutCampaignService {
         this.softwareVersionService = softwareVersionService;
         this.auditLogService = auditLogService;
         this.meterRegistry = meterRegistry;
+        this.entityManager = entityManager;
         
         // COUNT query per scrape (previously loaded every campaign on each Prometheus scrape).
         this.meterRegistry.gauge("pulse.rollout.campaigns.active", this.campaignRepository,
@@ -136,9 +140,7 @@ public class RolloutCampaignService {
         UUID actorId = actor.getId();
         auditLogService.log(actorId, "CAMPAIGN_PAUSED", "RolloutCampaign", campaignId.toString(), null);
 
-        CampaignResponse response = mapToCampaignResponse(saved);
-        otaWebSocketService.notifyCampaignProgress(campaignId, response);
-        return response;
+        return publishProgress(saved);
     }
 
     @Transactional
@@ -161,9 +163,7 @@ public class RolloutCampaignService {
         UUID actorId = actor.getId();
         auditLogService.log(actorId, "CAMPAIGN_ABORTED", "RolloutCampaign", campaignId.toString(), null);
 
-        CampaignResponse response = mapToCampaignResponse(saved);
-        otaWebSocketService.notifyCampaignProgress(campaignId, response);
-        return response;
+        return publishProgress(saved);
     }
 
     @Transactional
@@ -206,7 +206,10 @@ public class RolloutCampaignService {
             meterRegistry.counter("pulse.ota.updates.finished", "result", event.status().name()).increment();
         }
 
-        VehicleUpdateStatus savedStatus = vehicleUpdateStatusRepository.save(updateStatus);
+        // Flushed, so the response carries the version this transaction commits.
+        VehicleUpdateStatus savedStatus = vehicleUpdateStatusRepository.saveAndFlush(updateStatus);
+        // The rollout's counts just changed, so its version moves too (see raiseVersion).
+        raiseVersion(campaign);
 
         // Broadcast per-vehicle WS update
         VehicleUpdateStatusResponse vehicleResponse = mapToUpdateStatusResponse(savedStatus);
@@ -225,7 +228,7 @@ public class RolloutCampaignService {
             log.info("Campaign [{}] has completed all stages.", campaign.getId());
             campaign.setStatus(CampaignStatus.COMPLETED);
             campaignRepository.save(campaign);
-            otaWebSocketService.notifyCampaignProgress(campaign.getId(), mapToCampaignResponse(campaign));
+            publishProgress(campaign);
             return;
         }
 
@@ -285,7 +288,7 @@ public class RolloutCampaignService {
         }
 
         campaignRepository.save(campaign);
-        otaWebSocketService.notifyCampaignProgress(campaign.getId(), mapToCampaignResponse(campaign));
+        publishProgress(campaign);
 
         if (newlyTargeted.isEmpty()) {
             // Nothing new to instruct (vehicles in scope were targeted earlier or are already on
@@ -324,11 +327,40 @@ public class RolloutCampaignService {
 
             campaign.setStatus(CampaignStatus.PAUSED);
             campaignRepository.save(campaign);
-            otaWebSocketService.notifyCampaignProgress(campaign.getId(), mapToCampaignResponse(campaign));
+            publishProgress(campaign);
             return;
         }
 
         advanceIfStageFinished(campaign);
+    }
+
+    /**
+     * Sends the rollout's current state to browsers and returns it. The version is raised first, so
+     * every update carries a version no earlier update of this rollout had, even a second update in
+     * the same transaction (see raiseVersion). Package-private for RolloutVersionTest.
+     */
+    CampaignResponse publishProgress(RolloutCampaign campaign) {
+        raiseVersion(campaign);
+        CampaignResponse response = mapToCampaignResponse(campaign);
+        otaWebSocketService.notifyCampaignProgress(campaign.getId(), response);
+        return response;
+    }
+
+    /**
+     * A rollout's version stands for everything its response shows, but stage statuses and the
+     * counts live in other tables, so changing them leaves the rollout row (and its version)
+     * untouched. This raises it by one on every call, on the row this transaction already holds
+     * FOR UPDATE, so writers still raise it in commit order.
+     *
+     * <p>Not {@code lock(PESSIMISTIC_FORCE_INCREMENT)}: Hibernate runs that once per transaction and
+     * skips later calls, so a second update in the same transaction would repeat the version. Instead
+     * pending changes are flushed, the version is raised with an UPDATE, and the entity is refreshed
+     * so it holds the new version (and later flushes check against it).
+     */
+    private void raiseVersion(RolloutCampaign campaign) {
+        campaignRepository.flush();
+        campaignRepository.incrementVersion(campaign.getId());
+        entityManager.refresh(campaign);
     }
 
     /** One grouped query; the result answers stage evaluation and the response alike. */
@@ -363,7 +395,7 @@ public class RolloutCampaignService {
                 UUID actorId = campaign.getCreatedBy() != null ? campaign.getCreatedBy().getId() : null;
                 auditLogService.log(actorId, "CAMPAIGN_COMPLETED", "RolloutCampaign", campaign.getId().toString(), null);
                 
-                otaWebSocketService.notifyCampaignProgress(campaign.getId(), mapToCampaignResponse(campaign));
+                publishProgress(campaign);
             }
         }
     }
@@ -423,7 +455,8 @@ public class RolloutCampaignService {
                 stageResponses,
                 total,
                 installed,
-                failed);
+                failed,
+                campaign.getVersion());
     }
 
     public VehicleUpdateStatusResponse mapToUpdateStatusResponse(VehicleUpdateStatus status) {
@@ -438,6 +471,7 @@ public class RolloutCampaignService {
                 status.getProgressPercent(),
                 status.getStartedAt(),
                 status.getCompletedAt(),
-                status.getErrorMessage());
+                status.getErrorMessage(),
+                status.getVersion());
     }
 }

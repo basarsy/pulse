@@ -173,7 +173,7 @@ sequenceDiagram
   - Every pod publishes its updates to a Redis channel, and delivers the other pods' updates to its own browsers one at a time.
   - Sending to Redis happens on a background thread with a bounded queue. If Redis is down or slow, updates for other pods are dropped and counted in `pulse.live.updates.forward.failed`, and the code that publishes them never waits for Redis.
   - Updates published inside a transaction are held until it commits, then sent in publish order; if it rolls back, nothing is sent. A failed send is logged and the rest still go.
-  - The broker is set to preserve publish order. Order holds within one transaction and one thread. Two transactions that commit a few milliseconds apart on different threads (for example two vehicles reporting progress for one campaign) or on different pods can reach a browser in either order.
+  - The broker is set to preserve publish order. Order holds within one transaction and one thread. Two transactions that commit a few milliseconds apart on different threads (for example two vehicles reporting progress for one campaign) or on different pods can reach a browser in either order. Versions on every update ([design decision 6](#6-live-updates-carry-the-version-of-the-state-they-show)) let the dashboard drop the stale one.
   - The app starts even when Redis is down, and subscribes once Redis is back.
 - **Ruled out:**
   - A STOMP relay to RabbitMQ: a new broker for one feature.
@@ -186,7 +186,20 @@ sequenceDiagram
 
   [`LiveUpdatesWebSocketTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesWebSocketTest.java) shows with a real STOMP client that an update published in a transaction that rolls back never reaches the browser.
 
-### 6. DTOs are records, and tests pin their JSON
+### 6. Live updates carry the version of the state they show
+
+- **Problem:** two updates committed a few milliseconds apart, on different threads or pods, can reach a browser in either order (decision 5), and the dashboard showed whichever arrived last. A command could show `SENT` after `ACKNOWLEDGED` (the first is sent from the request thread, the second from the Kafka listener that handles the vehicle's reply), or a rollout could show a stage it had already left (its updates are triggered by different vehicles' events, on different threads). A page load races updates the same way: a load that read the database before a commit can resolve after that commit's update.
+- **Decision:**
+  - Every command, vehicle OTA update and rollout carries `version`, in live updates and REST responses alike: its row's JPA `@Version`. Apart from the demo seeder at startup, each writer to these rows either holds the rollout's row lock (rollouts, and their vehicles' updates) or is checked by optimistic locking (commands), so the version grows in commit order, on any pod. Vehicle OTA updates got a `version` column for this.
+  - Hibernate raises the version when it writes the row, which used to happen after the update was built. Paths that publish a command or a vehicle's OTA update now save with `saveAndFlush` first, so the update carries the version its transaction commits.
+  - A rollout's update also shows its stages and vehicle counts, which live in other tables and leave the rollout row untouched. Its version is raised explicitly before every rollout update and on every vehicle progress event it applies: pending changes are flushed, an `UPDATE … SET version = version + 1` runs on the row the transaction already holds, and the entity is refreshed. Not `PESSIMISTIC_FORCE_INCREMENT`: Hibernate applies that once per transaction, so a second update in the same transaction could repeat a version.
+  - On the pages that receive live updates, the dashboard ignores an update or a page load that has a lower version than the item it shows ([`utils/versions.ts`](pulse-dashboard/src/utils/versions.ts)).
+- **Ruled out:**
+  - A number from a Postgres sequence or Redis taken when publishing: it is taken before the commit, so two transactions can take numbers in the opposite order to their commits.
+  - Timestamps: clocks differ between pods, and two updates can share a millisecond.
+- **Proof:** [`LiveUpdateVersionsTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdateVersionsTest.java) runs a command, a vehicle's OTA update and a two-stage rollout to the end over a real STOMP connection. For each, the versions are distinct, a higher version never shows an earlier state, and the highest equals what the REST API returns afterwards. [`RolloutVersionTest`](pulse-monolith/src/test/java/com/pulse/connected/ota/RolloutVersionTest.java) publishes a rollout twice in one transaction, without changing it in between, and gets two versions. [`versions.test.ts`](pulse-dashboard/src/utils/versions.test.ts) covers the dashboard's rule.
+
+### 7. DTOs are records, and tests pin their JSON
 
 - **Problem:** about 1,550 lines of hand-written getters, setters and builders. Replacing them is only safe if the JSON that the dashboard and the Kafka consumers read stays exactly the same.
 - **Decision:** all 25 DTOs are Java records. Before the conversion, two tests pinned the current JSON and passed on the old classes. After it, they passed on the records with their assertions unchanged.
@@ -197,7 +210,7 @@ sequenceDiagram
   - [`DtoJsonContractTest`](pulse-monolith/src/test/java/com/pulse/connected/DtoJsonContractTest.java) reads every DTO from JSON, writes it back, and compares the two exactly.
   - [`ResponseMappingContractTest`](pulse-monolith/src/test/java/com/pulse/connected/ResponseMappingContractTest.java) runs each mapper with a different value in every field, so two arguments of the same type passed in the wrong order make it fail.
 
-### 7. In Kubernetes, each component accepts only the traffic it needs
+### 8. In Kubernetes, each component accepts only the traffic it needs
 
 - **Problem:** inside the cluster, any pod could reach Redis and Kafka, neither of which asks for credentials, and Postgres.
 - **Decision:**
@@ -303,6 +316,7 @@ sequenceDiagram
   - Dashboard redesign: design tokens, CSS Modules, real icons, a stage timeline for rollouts, accessible contrast and focus
   - Kubernetes network policies for every component (default deny, proven in a kind cluster in CI) and a Redis password
   - Node 26 (Active LTS) for the dashboard in CI and in its image; CI actions moved off the deprecated Node 20 runtime
+  - Live updates and API responses carry a version, and pages with live updates never replace a command, OTA update or rollout with an older one
 
 </details>
 
@@ -310,7 +324,6 @@ sequenceDiagram
   - Device authentication for vehicles (mTLS / device credentials)
   - Grafana provisioning for the Kubernetes manifests (currently Docker Compose only) and alert rules (outbox backlog, dead letters)
   - Browser end-to-end tests for the dashboard (Playwright)
-  - Sequence numbers on live updates, so the dashboard can drop a stale one (two updates committed milliseconds apart on different threads or pods can arrive in either order)
 
 ---
 
@@ -444,7 +457,7 @@ cp k8s/config/secrets.env.example k8s/config/secrets.env   # then set real value
 kubectl apply -k k8s
 ```
 
-Inside the `pulse` namespace every pod denies incoming traffic except from the components that need it (see [design decision 7](#7-in-kubernetes-each-component-accepts-only-the-traffic-it-needs)). These rules only take effect where the cluster's network plugin enforces NetworkPolicies: kind and k3s do by default, managed clouds usually need it switched on (GKE network policy, network policy support in EKS's VPC CNI), and Docker Desktop's default (kubeadm) Kubernetes doesn't. The policies expect the ingress controller in the `ingress-nginx` namespace; if it runs with `hostNetwork`, its traffic comes from node addresses instead and these rules won't match it. Prometheus and Grafana aren't exposed; open them with `kubectl -n pulse port-forward svc/grafana 3000` (or `svc/prometheus 9090`).
+Inside the `pulse` namespace every pod denies incoming traffic except from the components that need it (see [design decision 8](#8-in-kubernetes-each-component-accepts-only-the-traffic-it-needs)). These rules only take effect where the cluster's network plugin enforces NetworkPolicies: kind and k3s do by default, managed clouds usually need it switched on (GKE network policy, network policy support in EKS's VPC CNI), and Docker Desktop's default (kubeadm) Kubernetes doesn't. The policies expect the ingress controller in the `ingress-nginx` namespace; if it runs with `hostNetwork`, its traffic comes from node addresses instead and these rules won't match it. Prometheus and Grafana aren't exposed; open them with `kubectl -n pulse port-forward svc/grafana 3000` (or `svc/prometheus 9090`).
 
 Redis needs `REDIS_PASSWORD` in `k8s/config/secrets.env`. A `secrets.env` created before this setting existed doesn't have it, so add it, or Redis won't start.
 

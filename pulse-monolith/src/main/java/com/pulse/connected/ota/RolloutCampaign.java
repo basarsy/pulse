@@ -75,6 +75,9 @@ public class RolloutCampaign {
     }
 
     public UUID getId() { return id; }
+
+    /** Raised on every committed change (null until first saved); browsers use it to order updates. */
+    public Long getVersion() { return version; }
     public void setId(UUID id) { this.id = id; }
 
     public SoftwareVersion getSoftwareVersion() { return softwareVersion; }

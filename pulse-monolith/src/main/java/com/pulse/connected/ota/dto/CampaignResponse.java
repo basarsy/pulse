@@ -18,5 +18,6 @@ public record CampaignResponse(
         List<RolloutStageResponse> stages,
         long totalVehiclesTargeted,
         long vehiclesInstalled,
-        long vehiclesFailed) {
+        long vehiclesFailed,
+        long version) {
 }

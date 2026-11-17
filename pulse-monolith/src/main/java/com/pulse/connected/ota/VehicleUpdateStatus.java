@@ -48,6 +48,10 @@ public class VehicleUpdateStatus {
     @Column(name = "stage_index", nullable = false)
     private int stageIndex;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     public VehicleUpdateStatus() {}
 
     public VehicleUpdateStatus(UUID id, Vehicle vehicle, RolloutCampaign campaign, SoftwareVersion targetVersion, UpdateStatus status, Integer progressPercent, Instant startedAt, Instant completedAt, String errorMessage) {
@@ -67,6 +71,9 @@ public class VehicleUpdateStatus {
     }
 
     public UUID getId() { return id; }
+
+    /** Raised on every committed change (null until first saved); browsers use it to order updates. */
+    public Long getVersion() { return version; }
     public void setId(UUID id) { this.id = id; }
 
     public Vehicle getVehicle() { return vehicle; }

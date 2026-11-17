@@ -7,6 +7,7 @@ import com.pulse.connected.common.exception.ResourceNotFoundException;
 import com.pulse.connected.messaging.dto.OtaInstructionEvent;
 import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.data.domain.PageRequest;
 import com.pulse.connected.ota.dto.*;
 import com.pulse.connected.domain.CampaignStatus;
@@ -61,6 +62,9 @@ class RolloutCampaignServiceTest {
 
     @Mock
     private com.pulse.connected.common.AuditLogService auditLogService;
+
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
 
     @org.mockito.Spy
     private io.micrometer.core.instrument.MeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
@@ -134,6 +138,7 @@ class RolloutCampaignServiceTest {
 
         stage1.setCampaign(campaign);
         stage2.setCampaign(campaign);
+        persisted(campaign);
     }
 
     @Test
@@ -289,7 +294,7 @@ class RolloutCampaignServiceTest {
                 update(vehicle3, 1, UpdateStatus.DOWNLOADING),
                 failing);
         stubLockedLookup(failing);
-        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.saveAndFlush(any())).thenAnswer(saved());
         // The state after this event: stage 0 two INSTALLED, stage 1 one DOWNLOADING and one FAILED.
         when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId())).thenReturn(List.of(
                 new StageStatusCount(0, UpdateStatus.INSTALLED, 2),
@@ -307,7 +312,7 @@ class RolloutCampaignServiceTest {
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
         VehicleUpdateStatus installing = update(vehicle1, 0, UpdateStatus.INSTALLING);
         stubLockedLookup(installing);
-        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.saveAndFlush(any())).thenAnswer(saved());
         when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId())).thenReturn(List.of(
                 new StageStatusCount(0, UpdateStatus.INSTALLED, 1),
                 new StageStatusCount(0, UpdateStatus.INSTALLING, 1)));
@@ -327,7 +332,7 @@ class RolloutCampaignServiceTest {
         campaignService.handleVehicleUpdateProgress(progress(installed, UpdateStatus.DOWNLOADING));
 
         assertThat(installed.getStatus()).isEqualTo(UpdateStatus.INSTALLED);
-        verify(vehicleUpdateStatusRepository, never()).save(any());
+        verify(vehicleUpdateStatusRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -335,7 +340,7 @@ class RolloutCampaignServiceTest {
         VehicleUpdateStatus failed = update(vehicle1, 0, UpdateStatus.FAILED);
         campaign.setStatus(CampaignStatus.PAUSED);
         stubLockedLookup(failed);
-        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.saveAndFlush(any())).thenAnswer(saved());
 
         campaignService.handleVehicleUpdateProgress(progress(failed, UpdateStatus.ROLLED_BACK));
 
@@ -343,14 +348,14 @@ class RolloutCampaignServiceTest {
     }
 
     private VehicleUpdateStatus update(Vehicle vehicle, int stageIndex, UpdateStatus status) {
-        return VehicleUpdateStatus.builder()
+        return persisted(VehicleUpdateStatus.builder()
                 .id(UUID.randomUUID())
                 .vehicle(vehicle)
                 .campaign(campaign)
                 .targetVersion(version)
                 .stageIndex(stageIndex)
                 .status(status)
-                .build();
+                .build());
     }
 
     private OtaUpdateProgressEvent progress(VehicleUpdateStatus update, UpdateStatus status) {
@@ -370,6 +375,9 @@ class RolloutCampaignServiceTest {
             if (status.getId() == null) {
                 status.setId(UUID.randomUUID());
             }
+            if (status.getVersion() == null) {
+                persisted(status);
+            }
             return status;
         };
     }
@@ -383,11 +391,12 @@ class RolloutCampaignServiceTest {
                 .targetVersion(version)
                 .status(UpdateStatus.PENDING)
                 .build();
+        persisted(updateStatus);
 
         campaign.setStatus(CampaignStatus.IN_PROGRESS);
 
         stubLockedLookup(updateStatus);
-        when(vehicleUpdateStatusRepository.save(any())).thenReturn(updateStatus);
+        when(vehicleUpdateStatusRepository.saveAndFlush(any())).thenReturn(updateStatus);
         when(vehicleUpdateStatusRepository.countByStageAndStatus(campaign.getId()))
                 .thenReturn(List.of(new StageStatusCount(0, UpdateStatus.FAILED, 1)));
         when(softwareVersionService.mapToResponse(version)).thenReturn(ANY_VERSION_RESPONSE);
@@ -441,7 +450,7 @@ class RolloutCampaignServiceTest {
         // reflect every earlier event for this campaign.
         VehicleUpdateStatus downloading = update(vehicle1, 0, UpdateStatus.DOWNLOADING);
         stubLockedLookup(downloading);
-        when(vehicleUpdateStatusRepository.save(any())).thenAnswer(saved());
+        when(vehicleUpdateStatusRepository.saveAndFlush(any())).thenAnswer(saved());
 
         campaignService.handleVehicleUpdateProgress(progress(downloading, UpdateStatus.INSTALLING));
 
@@ -488,5 +497,11 @@ class RolloutCampaignServiceTest {
         when(vehicleUpdateStatusRepository.findCampaignIdById(update.getId())).thenReturn(Optional.of(campaign.getId()));
         when(campaignRepository.findByIdForUpdate(campaign.getId())).thenReturn(Optional.of(campaign));
         when(vehicleUpdateStatusRepository.findById(update.getId())).thenReturn(Optional.of(update));
+    }
+
+    /** What Hibernate does on the first save: the version starts at 0. */
+    private static <T> T persisted(T entity) {
+        ReflectionTestUtils.setField(entity, "version", 0L);
+        return entity;
     }
 }

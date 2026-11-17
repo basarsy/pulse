@@ -16,6 +16,7 @@ import com.pulse.connected.vehicle.Vehicle;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -103,14 +104,14 @@ class CommandServiceTest {
     void issueCommand_OnlineVehicle_DispatchesToKafka() {
         IssueCommandRequest request = new IssueCommandRequest(CommandType.LOCK, "idem-key-1");
 
-        RemoteCommand pendingCommand = RemoteCommand.builder()
+        RemoteCommand pendingCommand = persisted(RemoteCommand.builder()
                 .id(UUID.randomUUID())
                 .vehicle(onlineVehicle)
                 .issuedBy(owner)
                 .type(CommandType.LOCK)
                 .status(CommandStatus.PENDING)
                 .idempotencyKey("idem-key-1")
-                .build();
+                .build());
 
         when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
         when(commandRepository.findByIssuedByIdAndIdempotencyKey(owner.getId(), "idem-key-1")).thenReturn(Optional.empty());
@@ -132,7 +133,7 @@ class CommandServiceTest {
         RemoteCommand queued = pendingCommandFor(offlineVehicle);
         when(commandRepository.findAllByStatusAndRequestedAtBefore(eq(CommandStatus.PENDING), any()))
                 .thenReturn(List.of(queued));
-        when(commandRepository.save(queued)).thenReturn(queued);
+        when(commandRepository.saveAndFlush(queued)).thenReturn(queued);
         ArgumentCaptor<Instant> cutoff = ArgumentCaptor.forClass(Instant.class);
 
         Instant before = Instant.now();
@@ -152,7 +153,7 @@ class CommandServiceTest {
         when(commandRepository.findAllByStatusInAndSentAtBefore(
                 eq(List.of(CommandStatus.SENT, CommandStatus.ACKNOWLEDGED)), any()))
                 .thenReturn(List.of(acknowledged));
-        when(commandRepository.save(acknowledged)).thenReturn(acknowledged);
+        when(commandRepository.saveAndFlush(acknowledged)).thenReturn(acknowledged);
         ArgumentCaptor<Instant> cutoff = ArgumentCaptor.forClass(Instant.class);
 
         Instant before = Instant.now();
@@ -170,13 +171,13 @@ class CommandServiceTest {
     void issueCommand_OfflineVehicle_QueuesAsPending() {
         IssueCommandRequest request = new IssueCommandRequest(CommandType.UNLOCK, null);
 
-        RemoteCommand pendingCommand = RemoteCommand.builder()
+        RemoteCommand pendingCommand = persisted(RemoteCommand.builder()
                 .id(UUID.randomUUID())
                 .vehicle(offlineVehicle)
                 .issuedBy(owner)
                 .type(CommandType.UNLOCK)
                 .status(CommandStatus.PENDING)
-                .build();
+                .build());
 
         when(rateLimiter.checkRateLimit(owner.getId())).thenReturn(true);
         when(vehicleRepository.findById(offlineVehicle.getId())).thenReturn(Optional.of(offlineVehicle));
@@ -208,7 +209,7 @@ class CommandServiceTest {
 
         assertThatThrownBy(() -> commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.LOCK, "idem-key-1"), owner))
                 .isInstanceOf(DuplicateResourceException.class);
-        verify(commandRepository, never()).save(any());
+        verify(commandRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -220,7 +221,7 @@ class CommandServiceTest {
 
         assertThat(response.id()).isEqualTo(original.getId());
         assertThat(response.status()).isEqualTo(CommandStatus.COMPLETED);
-        verify(commandRepository, never()).save(any());
+        verify(commandRepository, never()).saveAndFlush(any());
         verifyNoInteractions(eventPublisher, webSocketService, auditLogService, rateLimiter);
     }
 
@@ -243,7 +244,7 @@ class CommandServiceTest {
 
         assertThatThrownBy(() -> commandService.issueCommand(onlineVehicle.getId(), keyedRequest(CommandType.UNLOCK, "k"), owner))
                 .isInstanceOf(DuplicateResourceException.class);
-        verify(commandRepository, never()).save(any());
+        verify(commandRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -253,7 +254,7 @@ class CommandServiceTest {
         when(commandRepository.saveAndFlush(any(RemoteCommand.class))).thenAnswer(invocation -> {
             RemoteCommand saved = invocation.getArgument(0);
             saved.setId(UUID.randomUUID());
-            return saved;
+            return persisted(saved);
         });
         ArgumentCaptor<RemoteCommand> saved = ArgumentCaptor.forClass(RemoteCommand.class);
 
@@ -300,14 +301,14 @@ class CommandServiceTest {
     }
 
     private RemoteCommand keyedCommand(Vehicle vehicle, CommandType type, CommandStatus status, String key) {
-        return RemoteCommand.builder()
+        return persisted(RemoteCommand.builder()
                 .id(UUID.randomUUID())
                 .vehicle(vehicle)
                 .issuedBy(owner)
                 .type(type)
                 .status(status)
                 .idempotencyKey(key)
-                .build();
+                .build());
     }
 
     @Test
@@ -330,7 +331,7 @@ class CommandServiceTest {
         RemoteCommand command = pendingCommandFor(onlineVehicle);
 
         when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
-        when(commandRepository.save(command)).thenReturn(command);
+        when(commandRepository.saveAndFlush(command)).thenReturn(command);
 
         CommandResponse response = commandService.cancelCommand(onlineVehicle.getId(), command.getId(), familyMember);
 
@@ -348,7 +349,7 @@ class CommandServiceTest {
 
         assertThatThrownBy(() -> commandService.cancelCommand(onlineVehicle.getId(), command.getId(), owner))
                 .isInstanceOf(ResourceNotFoundException.class);
-        verify(commandRepository, never()).save(any());
+        verify(commandRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -368,7 +369,7 @@ class CommandServiceTest {
         commandService.processCommandResult(command.getId(), onlineVehicle.getId(), CommandStatus.COMPLETED, "done");
 
         assertThat(command.getStatus()).isEqualTo(finalStatus);
-        verify(commandRepository, never()).save(any());
+        verify(commandRepository, never()).saveAndFlush(any());
         verifyNoInteractions(webSocketService);
         // The vehicle may really have executed it (e.g. unlocked after a cancel): keep a record.
         verify(auditLogService).log(eq(owner.getId()), eq("COMMAND_LATE_RESULT"), eq("RemoteCommand"),
@@ -385,7 +386,7 @@ class CommandServiceTest {
         fresh.setRequestedAt(Instant.now().minus(Duration.ofMinutes(1)));
         when(commandRepository.findAllByVehicleIdAndStatusIn(onlineVehicle.getId(), List.of(CommandStatus.PENDING)))
                 .thenReturn(List.of(stale, fresh));
-        when(commandRepository.save(any(RemoteCommand.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(commandRepository.saveAndFlush(any(RemoteCommand.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         commandService.dispatchPendingCommandsForVehicle(onlineVehicle.getId());
 
@@ -405,7 +406,7 @@ class CommandServiceTest {
         commandService.processCommandResult(command.getId(), offlineVehicle.getId(), CommandStatus.COMPLETED, "done");
 
         assertThat(command.getStatus()).isEqualTo(CommandStatus.SENT);
-        verify(commandRepository, never()).save(any());
+        verify(commandRepository, never()).saveAndFlush(any());
         verifyNoInteractions(webSocketService);
     }
 
@@ -413,20 +414,20 @@ class CommandServiceTest {
     void processCommandResult_Acknowledged_DoesNotResolve() {
         RemoteCommand command = commandFor(onlineVehicle, CommandStatus.SENT);
         when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
-        when(commandRepository.save(command)).thenReturn(command);
+        when(commandRepository.saveAndFlush(command)).thenReturn(command);
 
         commandService.processCommandResult(command.getId(), onlineVehicle.getId(), CommandStatus.ACKNOWLEDGED, null);
 
         assertThat(command.getStatus()).isEqualTo(CommandStatus.ACKNOWLEDGED);
         assertThat(command.getResolvedAt()).isNull();
-        verify(commandRepository).save(command);
+        verify(commandRepository).saveAndFlush(command);
     }
 
     @Test
     void processCommandResult_Completed_Resolves() {
         RemoteCommand command = commandFor(onlineVehicle, CommandStatus.ACKNOWLEDGED);
         when(commandRepository.findById(command.getId())).thenReturn(Optional.of(command));
-        when(commandRepository.save(command)).thenReturn(command);
+        when(commandRepository.saveAndFlush(command)).thenReturn(command);
 
         commandService.processCommandResult(command.getId(), onlineVehicle.getId(), CommandStatus.COMPLETED, "done");
 
@@ -440,12 +441,18 @@ class CommandServiceTest {
     }
 
     private RemoteCommand commandFor(Vehicle vehicle, CommandStatus status) {
-        return RemoteCommand.builder()
+        return persisted(RemoteCommand.builder()
                 .id(UUID.randomUUID())
                 .vehicle(vehicle)
                 .issuedBy(owner)
                 .type(CommandType.REMOTE_START)
                 .status(status)
-                .build();
+                .build());
+    }
+
+    /** What Hibernate does on the first save: the version starts at 0. */
+    private static <T> T persisted(T entity) {
+        ReflectionTestUtils.setField(entity, "version", 0L);
+        return entity;
     }
 }

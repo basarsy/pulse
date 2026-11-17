@@ -65,8 +65,8 @@ function MyVehicles({ vehicles }: { vehicles: Vehicle[] }) {
 export default function DashboardPage() {
   const { isAdmin, user } = useAuth();
   const { notifications } = useNotifications();
-  const vehicles = useAsync(isAdmin ? vehicleApi.fleet : vehicleApi.mine, [isAdmin], 15000);
-  const campaigns = useAsync<Campaign[]>(() => (isAdmin ? otaApi.campaigns() : Promise.resolve([])), [isAdmin], 15000);
+  const vehicles = useAsync(isAdmin ? vehicleApi.fleet : vehicleApi.mine, [isAdmin], { pollMs: 15000 });
+  const campaigns = useAsync<Campaign[]>(() => (isAdmin ? otaApi.campaigns() : Promise.resolve([])), [isAdmin], { pollMs: 15000 });
 
   const list = vehicles.data ?? [];
   const online = list.filter(v => v.connectivityState === 'ONLINE').length;

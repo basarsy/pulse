@@ -16,5 +16,6 @@ public record VehicleUpdateStatusResponse(
         Integer progressPercent,
         Instant startedAt,
         Instant completedAt,
-        String errorMessage) {
+        String errorMessage,
+        long version) {
 }

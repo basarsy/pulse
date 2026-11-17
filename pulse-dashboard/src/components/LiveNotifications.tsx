@@ -25,7 +25,7 @@ function VehicleCommandNotifications({ vehicle }: { vehicle: Vehicle }) {
 
 function OwnerNotifications() {
   // Owners may only subscribe to topics of their own vehicles.
-  const { data: vehicles } = useAsync(vehicleApi.mine, [], 15000);
+  const { data: vehicles } = useAsync(vehicleApi.mine, [], { pollMs: 15000 });
   return <>{vehicles?.map(v => <VehicleCommandNotifications key={v.id} vehicle={v} />)}</>;
 }
 
