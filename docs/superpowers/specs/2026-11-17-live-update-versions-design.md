@@ -5,9 +5,11 @@
 Live updates are sent after the database commit (`LiveUpdates`, PR #15). Two commits milliseconds
 apart, on different threads or pods, can reach a browser in either order: each instance sends its
 own, and updates from other instances arrive later through Redis. The dashboard applies whatever
-arrives last (`upsertById`, `setData`), so a stale update can overwrite a newer one: a vehicle
-shown as `DOWNLOADING 40%` after it reported `INSTALLED`, or a rollout shown as `IN_PROGRESS`
-after it completed. The README lists this under "Next".
+arrives last (`upsertById`, `setData`), so a stale update can overwrite a newer one: a command
+shown as `SENT` after `ACKNOWLEDGED` (sent from the request thread and from the Kafka listener
+thread), or a rollout shown at a stage it already left (its updates come from different vehicles'
+events, on different threads). One vehicle's own OTA updates keep their order: its events share a
+Kafka key, so one thread handles them in turn. The README lists this under "Next".
 
 The same race exists between a live update and a REST load. The page subscribes and fetches at the
 same time, and a fetch that read the database before a commit can resolve after that commit's live
