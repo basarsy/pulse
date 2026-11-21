@@ -23,7 +23,8 @@ class ScheduledJobLockWiringTest extends AbstractIntegrationTest {
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                 assertThat(jdbc.queryForList("select name from shedlock", String.class))
                         .contains("outbox-resubmit", "outbox-purge", "command-stale-sweep",
-                                "connectivity-offline-check", "simulator-heartbeats", "simulator-telemetry"));
+                                "connectivity-offline-check", "simulator-heartbeats", "simulator-telemetry",
+                                "command-pending-flush", "ota-update-timeout"));
     }
 
     @Test

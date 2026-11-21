@@ -52,7 +52,18 @@ public class VehicleUpdateStatus {
     @Column(name = "version", nullable = false)
     private Long version;
 
+    /** When the vehicle last reported progress (or, before that, when it was instructed). */
+    @Column(name = "last_progress_at", nullable = false)
+    private Instant lastProgressAt;
+
     public VehicleUpdateStatus() {}
+
+    @PrePersist
+    void onCreate() {
+        if (lastProgressAt == null) {
+            lastProgressAt = Instant.now();
+        }
+    }
 
     public VehicleUpdateStatus(UUID id, Vehicle vehicle, RolloutCampaign campaign, SoftwareVersion targetVersion, UpdateStatus status, Integer progressPercent, Instant startedAt, Instant completedAt, String errorMessage) {
         this.id = id;
@@ -99,6 +110,9 @@ public class VehicleUpdateStatus {
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public Instant getLastProgressAt() { return lastProgressAt; }
+    public void setLastProgressAt(Instant lastProgressAt) { this.lastProgressAt = lastProgressAt; }
 
     public int getStageIndex() { return stageIndex; }
     public void setStageIndex(int stageIndex) { this.stageIndex = stageIndex; }

@@ -3,7 +3,6 @@ package com.pulse.connected.telemetry;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
 import com.pulse.connected.messaging.dto.VehicleTelemetryEvent;
 import com.pulse.connected.telemetry.dto.TelemetrySnapshotResponse;
-import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -37,11 +36,17 @@ public class TelemetryService {
 
     @Transactional
     public void ingestTelemetry(VehicleTelemetryEvent event) {
-        Vehicle vehicle = vehicleRepository.findById(event.vehicleId())
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with ID: " + event.vehicleId()));
+        // Only the telemetry columns are written, not the whole row: heartbeats and OTA installs
+        // change the same vehicle concurrently, and saving a loaded copy could revert their changes.
+        // Server time, not the vehicle's clock: offline detection relies on lastSeenAt.
+        int updated = vehicleRepository.updateTelemetry(event.vehicleId(), event.batteryOrFuelLevel(),
+                event.odometerKm(), event.lat(), event.lng(), Instant.now());
+        if (updated == 0) {
+            throw new ResourceNotFoundException("Vehicle not found with ID: " + event.vehicleId());
+        }
 
         TelemetrySnapshot snapshot = TelemetrySnapshot.builder()
-                .vehicle(vehicle)
+                .vehicle(vehicleRepository.getReferenceById(event.vehicleId()))
                 .batteryOrFuelLevel(event.batteryOrFuelLevel())
                 .odometerKm(event.odometerKm())
                 .engineTempC(event.engineTempC())
@@ -55,16 +60,8 @@ public class TelemetryService {
 
         telemetrySnapshotRepository.save(snapshot);
 
-        vehicle.setBatteryOrFuelLevel(event.batteryOrFuelLevel());
-        vehicle.setOdometerKm(event.odometerKm());
-        vehicle.setLastLat(event.lat());
-        vehicle.setLastLng(event.lng());
-        // Server time, not the vehicle's clock: offline detection relies on lastSeenAt.
-        vehicle.setLastSeenAt(Instant.now());
-        vehicleRepository.save(vehicle);
-
         meterRegistry.counter("pulse.telemetry.ingested").increment();
-        log.debug("Ingested telemetry for vehicle: {}", vehicle.getId());
+        log.debug("Ingested telemetry for vehicle: {}", event.vehicleId());
     }
 
     @Transactional(readOnly = true)

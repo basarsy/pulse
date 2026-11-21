@@ -32,7 +32,8 @@ class ScheduledJobLockCoverageTest {
                 .isNotNull());
         assertThat(jobs).extracting(m -> m.getAnnotation(SchedulerLock.class).name())
                 .containsExactlyInAnyOrder("outbox-resubmit", "outbox-purge", "command-stale-sweep",
-                        "connectivity-offline-check", "simulator-heartbeats", "simulator-telemetry");
+                        "connectivity-offline-check", "simulator-heartbeats", "simulator-telemetry",
+                        "command-pending-flush", "ota-update-timeout");
     }
 
     private static List<Method> scheduledMethods() {
