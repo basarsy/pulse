@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,6 +63,22 @@ public interface VehicleUpdateStatusRepository extends JpaRepository<VehicleUpda
                                          @Param("model") String model,
                                          @Param("lastVin") String lastVin,
                                          @Param("targetVersionLabel") String targetVersionLabel);
+
+    /**
+     * Unfinished updates of running or paused rollouts that haven't reported progress since
+     * {@code cutoff}. A candidate list only: the timeout is re-checked under the campaign lock.
+     */
+    @Query("""
+            SELECT u.id FROM VehicleUpdateStatus u
+            WHERE u.status IN (com.pulse.connected.domain.UpdateStatus.PENDING,
+                               com.pulse.connected.domain.UpdateStatus.DOWNLOADING,
+                               com.pulse.connected.domain.UpdateStatus.DOWNLOADED,
+                               com.pulse.connected.domain.UpdateStatus.INSTALLING)
+              AND u.lastProgressAt < :cutoff
+              AND u.campaign.status IN (com.pulse.connected.domain.CampaignStatus.IN_PROGRESS,
+                                        com.pulse.connected.domain.CampaignStatus.PAUSED)
+            """)
+    List<UUID> findStalledUpdateIds(@Param("cutoff") Instant cutoff);
 
     /** The campaign an update belongs to, without loading the update (it is read after the campaign lock). */
     @Query("SELECT u.campaign.id FROM VehicleUpdateStatus u WHERE u.id = :id")

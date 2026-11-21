@@ -37,6 +37,8 @@ class ScheduledJobLockDurationTest {
             "outbox-resubmit", "pulse.outbox.resubmit-interval-ms",
             "outbox-purge", "pulse.outbox.purge-interval-ms",
             "connectivity-offline-check", "pulse.connectivity.check-interval-ms",
+            "command-pending-flush", "pulse.commands.pending-sweep-interval-ms",
+            "ota-update-timeout", "pulse.ota.timeout-check-interval-ms",
             "simulator-heartbeats", "pulse.simulator.heartbeat-interval-ms",
             "simulator-telemetry", "pulse.simulator.telemetry-interval-ms");
 
@@ -73,6 +75,8 @@ class ScheduledJobLockDurationTest {
                         "com.pulse.connected.messaging.OutboxMaintenance",
                         CommandService.class.getName(),
                         "com.pulse.connected.vehicle.VehicleConnectivityMonitor",
+                        "com.pulse.connected.command.PendingCommandSweep",
+                        "com.pulse.connected.ota.OtaUpdateTimeoutSweep",
                         "com.pulse.connected.simulator.VehicleSimulatorRunner").stream()
                 .map(name -> ClassUtils.resolveClassName(name, ScheduledJobLockDurationTest.class.getClassLoader()))
                 .flatMap(type -> Arrays.stream(type.getDeclaredMethods()))

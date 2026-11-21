@@ -155,10 +155,10 @@ sequenceDiagram
 ### 4. Each scheduled job runs once across replicas
 
 - **Problem:** with 2 replicas, every `@Scheduled` job would run twice, and two outbox resubmission runs would send duplicate Kafka messages. That is why the app ran as a single replica until this change.
-- **Decision:** [ShedLock](https://github.com/lukas-krecan/ShedLock), with the locks in Postgres and the database's clock. Each of the six jobs takes its lock row first, and a replica that finds the row taken skips that run.
+- **Decision:** [ShedLock](https://github.com/lukas-krecan/ShedLock), with the locks in Postgres and the database's clock. Each of the eight jobs takes its lock row first, and a replica that finds the row taken skips that run.
 - **Ruled out:**
   - Hand-written advisory locks: custom code instead of a well-known library.
-  - Electing one leader instance: heavy for six small jobs, and a stuck leader stops all of them.
+  - Electing one leader instance: heavy for eight small jobs, and a stuck leader stops all of them.
 - **Proof:**
   - [`SchedulerLockTest`](pulse-monolith/src/test/java/com/pulse/connected/SchedulerLockTest.java) shows that a second run at the same time is skipped while the first holds the lock.
   - [`ScheduledJobLockCoverageTest`](pulse-monolith/src/test/java/com/pulse/connected/ScheduledJobLockCoverageTest.java) fails the build if a new `@Scheduled` method has no lock.
@@ -230,12 +230,38 @@ sequenceDiagram
   - A CI job starts a real kind cluster and applies the policies and Redis. A pod labelled as the app gets `PONG` with the password and `NOAUTH` without it. Any other pod in the namespace can't connect, and neither can a pod in another namespace that copies the app's labels ([`network-policies.sh`](k8s/tests/network-policies.sh)).
   - An app instance with the right Redis password rate-limits through Redis; one with a wrong password still accepts commands and writes nothing to Redis ([`LiveUpdatesAcrossInstancesTest`](pulse-monolith/src/test/java/com/pulse/connected/LiveUpdatesAcrossInstancesTest.java)).
 
+### 9. Writers to a vehicle's row only write their own columns
+
+- **Problem:** heartbeats, telemetry and OTA installs all change the `vehicles` row, each from its own Kafka listener thread. Each loaded the vehicle and saved it back, and Hibernate writes every column on save. So a heartbeat that loaded the row just before an install committed wrote the old software version back: the dashboard showed the wrong version, and the next rollout stage instructed the vehicle again.
+- **Decision:**
+  - Each writer runs one `UPDATE` of only its own columns: heartbeats set the connectivity state and `lastSeenAt`, telemetry the latest reading, an install the software version.
+  - A heartbeat detects the reconnect in the same statement (`… WHERE connectivity_state <> 'ONLINE'`), so of two simultaneous heartbeats only one reports it.
+- **Ruled out:**
+  - `@Version` on the vehicle: a heartbeat every 15 seconds would make the other writers fail and retry constantly.
+  - `@DynamicUpdate`: it writes only the changed columns, but still from a loaded copy, and relies on every writer setting nothing else.
+- **Proof:** [`VehicleConcurrentWritesTest`](pulse-monolith/src/test/java/com/pulse/connected/vehicle/VehicleConcurrentWritesTest.java) holds an uncommitted install's row lock while a heartbeat, then a telemetry reading, reads the row and waits for it. After the install commits, the new version is still there. Against the previous telemetry code, the test fails with the old version written back.
+
+### 10. Nothing waits forever for a vehicle
+
+- **Problem:** two ways work could stall with no error.
+  - A rollout stage advances only once all of its vehicles have finished, and OTA updates had no timeout. One vehicle going offline mid-download held the whole rollout `IN_PROGRESS` forever.
+  - Queued commands were sent by the reconnect flush, which ran inside the heartbeat's handling. If the flush failed, the retried heartbeat found the vehicle already online and never flushed again. A command committed just after the flush read the queue was missed too. Either way the command waited until it expired, although the vehicle was listening.
+- **Decision:**
+  - Every OTA update records when its vehicle last reported (`last_progress_at`). A locked job fails updates with no progress for 30 minutes (`pulse.ota.update-timeout`). A timeout counts as a failure, so many silent vehicles pause the rollout just as failed installs do. The check is repeated under the campaign's row lock, so progress that arrives meanwhile keeps the update running.
+  - `VehicleReconnectedEvent` goes through the outbox ([design decision 1](#1-kafka-sends-go-through-a-transactional-outbox)), so a failed flush is resubmitted. A second locked job sends queued commands of vehicles that are already online. If both reach a command at once, optimistic locking makes one roll back, so a command is never sent twice.
+- **Ruled out:**
+  - A timeout per stage: one slow vehicle would fail the whole stage, and fast stages would still wait out the full time.
+  - A new `TIMED_OUT` update status: every client and count would need to know it, while for the rollout it means the same as `FAILED`. The error message tells them apart.
+- **Proof:**
+  - [`OtaUpdateTimeoutTest`](pulse-monolith/src/test/java/com/pulse/connected/ota/OtaUpdateTimeoutTest.java): a silent vehicle's update fails while one that still reports keeps going; a rollout completes or pauses depending on the threshold; an update that reported after the job picked it isn't failed.
+  - [`QueuedCommandFlushTest`](pulse-monolith/src/test/java/com/pulse/connected/command/QueuedCommandFlushTest.java): a reconnect sends the queued command through a completed outbox publication, and the job sends a queued command that missed the flush.
+
 ---
 
 ## 🚀 Key Capabilities
 
-- **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real time over STOMP WebSockets. A vehicle is marked offline after 60s without a heartbeat; commands for offline vehicles are queued and flushed when it reconnects. Queued commands expire after 15 minutes, so a stale `UNLOCK` never fires hours later, and dispatched commands time out 60s after they were sent. Late or duplicate results never reopen a finished command. All limits are configurable (`pulse.connectivity.*`, `pulse.commands.*`).
-- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold. Stages are increasing whole percentages ending at 100 and the threshold is 0–100; anything else is rejected with a `400` that names the problem.
+- **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real time over STOMP WebSockets. A vehicle is marked offline after 60s without a heartbeat; commands for offline vehicles are queued and flushed when it reconnects. Queued commands expire after 15 minutes, so a stale `UNLOCK` never fires hours later, and dispatched commands time out 60s after they were sent. Queued commands are also sent by a periodic job if a vehicle is online but its reconnect flush missed them. Late or duplicate results never reopen a finished command. All limits are configurable (`pulse.connectivity.*`, `pulse.commands.*`).
+- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold. A vehicle that reports no progress for 30 minutes counts as failed, so one silent vehicle cannot stall a rollout. Stages are increasing whole percentages ending at 100 and the threshold is 0–100; anything else is rejected with a `400` that names the problem.
 - **Telemetry Ingestion Pipeline**: Vehicle diagnostics (battery/fuel level, odometer, engine temperature, GPS) consumed from Kafka (`vehicle.telemetry`) and persisted in `telemetry_snapshots`.
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
 - **Idempotency & Rate Limiting**: per-user idempotency keys enforced by the database (a retry returns the original command, even when identical requests race; keys never expire; reusing a key for another vehicle or command type is a `409`), and a Redis fixed-window rate limit that only counts new commands (10 commands/min, `429` when exceeded), skipped and counted while Redis is unreachable.
@@ -317,6 +343,7 @@ sequenceDiagram
   - Kubernetes network policies for every component (default deny, proven in a kind cluster in CI) and a Redis password
   - Node 26 (Active LTS) for the dashboard in CI and in its image; CI actions moved off the deprecated Node 20 runtime
   - Live updates and API responses carry a version, and pages with live updates never replace a command, OTA update or rollout with an older one
+  - Heartbeats, telemetry and OTA installs write only their own columns of a vehicle (no lost updates); OTA updates time out; queued commands are flushed through the outbox and by a sweep
 
 </details>
 

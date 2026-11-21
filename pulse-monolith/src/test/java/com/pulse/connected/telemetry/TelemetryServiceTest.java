@@ -22,6 +22,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.notNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,7 +53,7 @@ class TelemetryServiceTest {
     }
 
     @Test
-    void ingestTelemetry_savesSnapshotAndUpdatesVehicle() {
+    void ingestTelemetry_savesSnapshotAndUpdatesOnlyTelemetryColumns() {
         VehicleTelemetryEvent event = new VehicleTelemetryEvent(
                 vehicleId,
                 85.5,
@@ -60,8 +62,9 @@ class TelemetryServiceTest {
                 48.1351,
                 11.5820,
                 Instant.now());
-
-        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
+        when(vehicleRepository.updateTelemetry(eq(vehicleId), eq(85.5), eq(12000.0), eq(48.1351), eq(11.5820), any()))
+                .thenReturn(1);
+        when(vehicleRepository.getReferenceById(vehicleId)).thenReturn(testVehicle);
 
         telemetryService.ingestTelemetry(event);
 
@@ -77,15 +80,8 @@ class TelemetryServiceTest {
         assertEquals(11.5820, savedSnapshot.getLng());
         assertEquals(event.timestamp(), savedSnapshot.getRecordedAt());
 
-        ArgumentCaptor<Vehicle> vehicleCaptor = ArgumentCaptor.forClass(Vehicle.class);
-        verify(vehicleRepository).save(vehicleCaptor.capture());
-        Vehicle updatedVehicle = vehicleCaptor.getValue();
-
-        assertEquals(85.5, updatedVehicle.getBatteryOrFuelLevel());
-        assertEquals(12000.0, updatedVehicle.getOdometerKm());
-        assertEquals(48.1351, updatedVehicle.getLastLat());
-        assertEquals(11.5820, updatedVehicle.getLastLng());
-
+        // Never the whole row: that could revert a software version an OTA install just wrote.
+        verify(vehicleRepository, never()).save(any());
         assertEquals(1.0, meterRegistry.counter("pulse.telemetry.ingested").count());
     }
 
@@ -102,7 +98,9 @@ class TelemetryServiceTest {
     void ingestTelemetry_lastSeenAtUsesServerClock() {
         Instant vehicleClock = Instant.now().plus(java.time.Duration.ofDays(1));
         VehicleTelemetryEvent event = eventWithoutReadings(vehicleClock);
-        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
+        ArgumentCaptor<Instant> seenAt = ArgumentCaptor.forClass(Instant.class);
+        when(vehicleRepository.updateTelemetry(eq(vehicleId), any(), any(), any(), any(), seenAt.capture())).thenReturn(1);
+        when(vehicleRepository.getReferenceById(vehicleId)).thenReturn(testVehicle);
 
         Instant before = Instant.now();
         telemetryService.ingestTelemetry(event);
@@ -112,7 +110,7 @@ class TelemetryServiceTest {
         verify(telemetrySnapshotRepository).save(snapshotCaptor.capture());
         assertEquals(vehicleClock, snapshotCaptor.getValue().getRecordedAt());
 
-        Instant lastSeenAt = testVehicle.getLastSeenAt();
+        Instant lastSeenAt = seenAt.getValue();
         assertTrue(!lastSeenAt.isBefore(before) && !lastSeenAt.isAfter(after),
                 "lastSeenAt should be server time, was " + lastSeenAt);
     }
@@ -120,23 +118,24 @@ class TelemetryServiceTest {
     @Test
     void ingestTelemetry_missingTimestamp_stillMarksVehicleSeen() {
         VehicleTelemetryEvent event = eventWithoutReadings(null);
-        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(testVehicle));
+        when(vehicleRepository.updateTelemetry(eq(vehicleId), any(), any(), any(), any(), notNull())).thenReturn(1);
+        when(vehicleRepository.getReferenceById(vehicleId)).thenReturn(testVehicle);
 
         telemetryService.ingestTelemetry(event);
 
-        assertNotNull(testVehicle.getLastSeenAt());
+        verify(vehicleRepository).updateTelemetry(eq(vehicleId), any(), any(), any(), any(), notNull());
     }
 
     @Test
     void ingestTelemetry_vehicleNotFound_throwsException() {
         VehicleTelemetryEvent event = eventWithoutReadings(null);
 
-        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.empty());
+        when(vehicleRepository.updateTelemetry(eq(vehicleId), any(), any(), any(), any(), any())).thenReturn(0);
 
         assertThrows(ResourceNotFoundException.class, () -> telemetryService.ingestTelemetry(event));
         verify(telemetrySnapshotRepository, never()).save(any());
-        verify(vehicleRepository, never()).save(any());
     }
+
 
     @Test
     void getLatestSnapshot_returnsCorrectData() {

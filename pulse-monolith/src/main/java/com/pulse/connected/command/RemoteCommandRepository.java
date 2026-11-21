@@ -3,6 +3,7 @@ package com.pulse.connected.command;
 import com.pulse.connected.domain.CommandStatus;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -23,6 +24,17 @@ public interface RemoteCommandRepository extends JpaRepository<RemoteCommand, UU
 
     /** Commands in {@code status} requested before {@code cutoff} (queued commands that expired). */
     List<RemoteCommand> findAllByStatusAndRequestedAtBefore(CommandStatus status, Instant cutoff);
+
+    /**
+     * Vehicles that are online but still have queued commands, which their reconnect flush should
+     * have sent: e.g. a command committed just after that flush read the queue.
+     */
+    @Query("""
+            SELECT DISTINCT c.vehicle.id FROM RemoteCommand c
+            WHERE c.status = com.pulse.connected.domain.CommandStatus.PENDING
+              AND c.vehicle.connectivityState = com.pulse.connected.domain.ConnectivityState.ONLINE
+            """)
+    List<UUID> findOnlineVehicleIdsWithPendingCommands();
 
     /** Commands in one of {@code statuses} sent before {@code cutoff} (dispatched commands that timed out). */
     List<RemoteCommand> findAllByStatusInAndSentAtBefore(Collection<CommandStatus> statuses, Instant cutoff);

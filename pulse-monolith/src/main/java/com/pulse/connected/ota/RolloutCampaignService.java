@@ -168,16 +168,8 @@ public class RolloutCampaignService {
 
     @Transactional
     public void handleVehicleUpdateProgress(OtaUpdateProgressEvent event) {
-        // Progress events are consumed in parallel. Lock the campaign first, and only then read the
-        // update: events for one campaign are applied one after another, each seeing the previous
-        // one's committed changes, so the last one of a stage reliably sees the stage finished
-        // (no stall) and only it advances (no double start).
-        UUID campaignId = vehicleUpdateStatusRepository.findCampaignIdById(event.updateStatusId())
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.updateStatusId()));
-        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
-                .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
-        VehicleUpdateStatus updateStatus = vehicleUpdateStatusRepository.findById(event.updateStatusId())
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + event.updateStatusId()));
+        LockedUpdate locked = lockCampaignAndLoad(event.updateStatusId());
+        VehicleUpdateStatus updateStatus = locked.update();
 
         if (!UpdateStatusTransitions.isAllowed(updateStatus.getStatus(), event.status())) {
             log.info("Ignoring stale OTA progress for update [{}]: {} -> {} is not allowed",
@@ -185,25 +177,78 @@ public class RolloutCampaignService {
             return;
         }
 
-        updateStatus.setStatus(event.status());
-        updateStatus.setProgressPercent(event.progressPercent() != null ? event.progressPercent() : 0);
+        applyProgress(locked.campaign(), updateStatus, event.status(),
+                event.progressPercent() != null ? event.progressPercent() : 0, event.errorMessage());
+    }
 
-        if (event.status() == UpdateStatus.DOWNLOADING && updateStatus.getStartedAt() == null) {
-            updateStatus.setStartedAt(Instant.now());
+    /**
+     * Fails an update whose vehicle has reported nothing since {@code cutoff} (offline, or lost the
+     * instruction), so its stage can finish: without it the stage would wait for that vehicle
+     * forever. It counts as a failure, so many silent vehicles pause the rollout like failed installs.
+     *
+     * <p>Re-checked under the campaign lock: progress that arrived after the sweep picked the update
+     * keeps it running. Returns whether the update was failed.
+     */
+    @Transactional
+    public boolean failIfStalled(UUID updateStatusId, Instant cutoff, String reason) {
+        LockedUpdate locked = lockCampaignAndLoad(updateStatusId);
+        VehicleUpdateStatus updateStatus = locked.update();
+        CampaignStatus campaignStatus = locked.campaign().getStatus();
+        boolean campaignRunning = campaignStatus == CampaignStatus.IN_PROGRESS || campaignStatus == CampaignStatus.PAUSED;
+        if (updateStatus.isFinished() || !campaignRunning || !updateStatus.getLastProgressAt().isBefore(cutoff)) {
+            return false;
         }
 
-        if (event.status() == UpdateStatus.INSTALLED) {
-            updateStatus.setCompletedAt(Instant.now());
-            // Update physical vehicle software version
-            Vehicle vehicle = updateStatus.getVehicle();
-            vehicle.setCurrentSoftwareVersion(updateStatus.getTargetVersion().getVersionLabel());
-            vehicleRepository.save(vehicle);
-        } else if (event.status() == UpdateStatus.FAILED || event.status() == UpdateStatus.ROLLED_BACK) {
-            updateStatus.setCompletedAt(Instant.now());
-            updateStatus.setErrorMessage(event.errorMessage() != null ? event.errorMessage() : "Installation failed");
+        log.warn("OTA update [{}] of vehicle [{}] timed out in {}: {}", updateStatus.getId(),
+                updateStatus.getVehicle().getId(), updateStatus.getStatus(), reason);
+        meterRegistry.counter("pulse.ota.updates.timed_out").increment();
+        applyProgress(locked.campaign(), updateStatus, UpdateStatus.FAILED, updateStatus.getProgressPercent(), reason);
+        return true;
+    }
+
+    private record LockedUpdate(RolloutCampaign campaign, VehicleUpdateStatus update) {
+    }
+
+    /**
+     * Progress events are consumed in parallel. Lock the campaign first, and only then read the
+     * update: changes for one campaign are applied one after another, each seeing the previous one's
+     * committed changes, so the last one of a stage reliably sees the stage finished (no stall) and
+     * only it advances (no double start).
+     */
+    private LockedUpdate lockCampaignAndLoad(UUID updateStatusId) {
+        UUID campaignId = vehicleUpdateStatusRepository.findCampaignIdById(updateStatusId)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + updateStatusId));
+        RolloutCampaign campaign = campaignRepository.findByIdForUpdate(campaignId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rollout campaign not found with ID: " + campaignId));
+        VehicleUpdateStatus updateStatus = vehicleUpdateStatusRepository.findById(updateStatusId)
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle update status not found with ID: " + updateStatusId));
+        return new LockedUpdate(campaign, updateStatus);
+    }
+
+    /** Applies an allowed status change to an update of the locked campaign, then evaluates its stage. */
+    private void applyProgress(RolloutCampaign campaign, VehicleUpdateStatus updateStatus, UpdateStatus status,
+                               int progressPercent, String errorMessage) {
+        Instant now = Instant.now();
+        updateStatus.setStatus(status);
+        updateStatus.setProgressPercent(progressPercent);
+        updateStatus.setLastProgressAt(now);
+
+        if (status == UpdateStatus.DOWNLOADING && updateStatus.getStartedAt() == null) {
+            updateStatus.setStartedAt(now);
+        }
+
+        if (status == UpdateStatus.INSTALLED) {
+            updateStatus.setCompletedAt(now);
+            // Only the version column: heartbeats and telemetry write the same row concurrently, and
+            // saving the whole loaded vehicle could revert their changes (or they this one).
+            vehicleRepository.updateSoftwareVersion(updateStatus.getVehicle().getId(),
+                    updateStatus.getTargetVersion().getVersionLabel());
+        } else if (status == UpdateStatus.FAILED || status == UpdateStatus.ROLLED_BACK) {
+            updateStatus.setCompletedAt(now);
+            updateStatus.setErrorMessage(errorMessage != null ? errorMessage : "Installation failed");
         }
         if (updateStatus.isFinished()) {
-            meterRegistry.counter("pulse.ota.updates.finished", "result", event.status().name()).increment();
+            meterRegistry.counter("pulse.ota.updates.finished", "result", status.name()).increment();
         }
 
         // Flushed, so the response carries the version this transaction commits.
