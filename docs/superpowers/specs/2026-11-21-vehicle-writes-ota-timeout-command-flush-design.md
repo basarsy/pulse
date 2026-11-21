@@ -28,8 +28,10 @@ The full code review of 2026-11-21 found three correctness gaps:
 ## Non-goals
 
 - `TIMED_OUT` as a separate OTA update status (see Approaches).
-- Cancelling the instruction on the vehicle when its update times out. A late report is ignored by
-  the forward-only status transitions.
+- Cancelling the instruction on the vehicle when its update times out. A late progress report is
+  ignored by the forward-only status transitions, except a late `INSTALLED`: the update stays
+  `FAILED` (the stage was already decided), but the vehicle's software version is recorded, since
+  it really runs it now (counted in `pulse.ota.updates.late_installs`).
 
 ## Approaches
 

@@ -172,6 +172,10 @@ public class RolloutCampaignService {
         VehicleUpdateStatus updateStatus = locked.update();
 
         if (!UpdateStatusTransitions.isAllowed(updateStatus.getStatus(), event.status())) {
+            if (updateStatus.getStatus() == UpdateStatus.FAILED && event.status() == UpdateStatus.INSTALLED) {
+                recordLateInstall(updateStatus);
+                return;
+            }
             log.info("Ignoring stale OTA progress for update [{}]: {} -> {} is not allowed",
                     updateStatus.getId(), updateStatus.getStatus(), event.status());
             return;
@@ -204,6 +208,20 @@ public class RolloutCampaignService {
         meterRegistry.counter("pulse.ota.updates.timed_out").increment();
         applyProgress(locked.campaign(), updateStatus, UpdateStatus.FAILED, updateStatus.getProgressPercent(), reason);
         return true;
+    }
+
+    /**
+     * The vehicle installed an update already counted as failed (typically timed out while the car
+     * was parked, then it resumed). The update stays FAILED, so the stage's counts and decisions
+     * don't change after the fact, but the vehicle really runs the new version now: record it, or
+     * the dashboard shows the old one and the next rollout instructs this vehicle again.
+     */
+    private void recordLateInstall(VehicleUpdateStatus updateStatus) {
+        String label = updateStatus.getTargetVersion().getVersionLabel();
+        log.warn("Vehicle [{}] installed {} after its update [{}] was marked FAILED; recording the version only",
+                updateStatus.getVehicle().getId(), label, updateStatus.getId());
+        vehicleRepository.updateSoftwareVersion(updateStatus.getVehicle().getId(), label);
+        meterRegistry.counter("pulse.ota.updates.late_installs").increment();
     }
 
     private record LockedUpdate(RolloutCampaign campaign, VehicleUpdateStatus update) {

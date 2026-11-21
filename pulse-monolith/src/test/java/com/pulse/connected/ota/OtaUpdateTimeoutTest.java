@@ -8,6 +8,7 @@ import com.pulse.connected.domain.CampaignStatus;
 import com.pulse.connected.domain.ConnectivityState;
 import com.pulse.connected.domain.RolloutStageStatus;
 import com.pulse.connected.domain.UpdateStatus;
+import com.pulse.connected.messaging.dto.OtaUpdateProgressEvent;
 import com.pulse.connected.vehicle.Vehicle;
 import com.pulse.connected.vehicle.VehicleRepository;
 import org.junit.jupiter.api.Test;
@@ -112,6 +113,32 @@ class OtaUpdateTimeoutTest extends AbstractIntegrationTest {
 
         assertThat(campaignService.failIfStalled(update, cutoff, "timed out")).isFalse();
         assertThat(updateRepository.findById(update).orElseThrow().getStatus()).isEqualTo(UpdateStatus.DOWNLOADING);
+    }
+
+    /**
+     * A parked car resumes after its update timed out and installs it. The update stays FAILED (the
+     * stage was already decided), but the vehicle's software version must show what it runs now.
+     */
+    @Test
+    void installAfterTimeout_RecordsTheVehiclesVersion_ButKeepsTheUpdateFailed() {
+        Rollout rollout = rolloutWithUpdates(50.0, UpdateStatus.INSTALLED, UpdateStatus.DOWNLOADING);
+        UUID update = rollout.updates().get(1);
+        lastProgress(update, Duration.ofHours(2));
+        sweep.sweep();
+        assertThat(updateRepository.findById(update).orElseThrow().getStatus()).isEqualTo(UpdateStatus.FAILED);
+
+        UUID vehicleId = jdbc.queryForObject("SELECT vehicle_id FROM vehicle_update_status WHERE id = ?", UUID.class, update);
+        String target = jdbc.queryForObject("""
+                SELECT s.version_label FROM vehicle_update_status u JOIN software_versions s ON s.id = u.target_version_id
+                WHERE u.id = ?""", String.class, update);
+        campaignService.handleVehicleUpdateProgress(new OtaUpdateProgressEvent(
+                update, vehicleId, rollout.campaignId(), UpdateStatus.INSTALLED, 100, null, null));
+
+        assertThat(vehicleRepository.findById(vehicleId).orElseThrow().getCurrentSoftwareVersion()).isEqualTo(target);
+        assertThat(updateRepository.findById(update).orElseThrow().getStatus())
+                .as("the stage's counts don't change after the fact").isEqualTo(UpdateStatus.FAILED);
+        assertThat(campaignRepository.findById(rollout.campaignId()).orElseThrow().getStatus())
+                .isEqualTo(CampaignStatus.COMPLETED);
     }
 
     private void lastProgress(UUID updateId, Duration ago) {
