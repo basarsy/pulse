@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -96,6 +97,40 @@ class AuthServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.accessToken()).isEqualTo("mock_access_token");
+    }
+
+    /** The check must see the stored form, or a differently cased duplicate reaches the constraint (500). */
+    @Test
+    void register_DuplicateEmailInOtherCase_ThrowsDuplicate() {
+        RegisterRequest request = new RegisterRequest(" Basar@Example.COM ", "password123", "Başar Soytürk");
+
+        when(userRepository.existsByEmail("basar@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(DuplicateResourceException.class);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void login_EmailInOtherCase_FindsUser() {
+        LoginRequest request = new LoginRequest("BASAR@example.com", "password123");
+
+        when(userRepository.findByEmail("basar@example.com")).thenReturn(Optional.of(sampleUser));
+        when(passwordEncoder.matches("password123", "hashed_pass")).thenReturn(true);
+
+        assertThat(authService.login(request)).isNotNull();
+    }
+
+    /** "I" lowercases to a dotless "ı" under a Turkish default locale unless the locale is fixed. */
+    @Test
+    void normaliseEmail_IgnoresTurkishDefaultLocale() {
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            assertThat(AuthService.normaliseEmail("INFO@PULSE.DEMO")).isEqualTo("info@pulse.demo");
+        } finally {
+            Locale.setDefault(previous);
+        }
     }
 
     @Test

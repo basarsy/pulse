@@ -242,7 +242,8 @@ public class RolloutCampaignService {
         // order so every stage extends the previous one. Only the vehicles to instruct are loaded.
         String model = campaign.getTargetModel();
         long fleetSize = vehicleUpdateStatusRepository.countVehiclesOfModel(model);
-        // Stage percentages are not validated: a share above 100% means the whole fleet.
+        // Percentages are validated on create (1-100, increasing, ending at 100); min() only stops
+        // rounding up from going past the fleet size.
         int targetCount = (int) Math.min(fleetSize, Math.ceil((fleetSize * activeStage.getPercentage()) / 100.0));
         String targetLabel = campaign.getSoftwareVersion().getVersionLabel();
 

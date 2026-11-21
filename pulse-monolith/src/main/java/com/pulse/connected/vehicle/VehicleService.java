@@ -2,6 +2,7 @@ package com.pulse.connected.vehicle;
 
 import com.pulse.connected.domain.ConnectivityState;
 
+import com.pulse.connected.auth.AuthService;
 import com.pulse.connected.auth.User;
 import com.pulse.connected.auth.UserRepository;
 import com.pulse.connected.common.exception.DuplicateResourceException;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -34,12 +36,14 @@ public class VehicleService {
 
     @Transactional
     public VehicleResponse registerVehicle(CreateVehicleRequest request, User currentUser) {
-        if (vehicleRepository.existsByVin(request.vin().toUpperCase())) {
+        // Locale.ROOT: under a Turkish default locale "i" would become a dotted "İ".
+        String vin = request.vin().toUpperCase(Locale.ROOT);
+        if (vehicleRepository.existsByVin(vin)) {
             throw new DuplicateResourceException("Vehicle with VIN '" + request.vin() + "' already exists");
         }
 
         Vehicle vehicle = Vehicle.builder()
-                .vin(request.vin().toUpperCase())
+                .vin(vin)
                 .model(request.model())
                 .modelYear(request.modelYear())
                 .owner(currentUser)
@@ -79,7 +83,7 @@ public class VehicleService {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with ID: " + vehicleId));
 
-        User familyUser = userRepository.findByEmail(request.userEmail().toLowerCase())
+        User familyUser = userRepository.findByEmail(AuthService.normaliseEmail(request.userEmail()))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + request.userEmail()));
 
         if (vehicle.getOwner() != null && vehicle.getOwner().getId().equals(familyUser.getId())) {

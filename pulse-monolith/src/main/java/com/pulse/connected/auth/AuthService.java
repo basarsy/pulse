@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -31,13 +32,16 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email '" + request.email() + "' is already registered");
+        // Emails are stored normalised, so the check must use the same form: otherwise "Foo@x.com"
+        // passes it while "foo@x.com" exists, and the unique constraint fails instead.
+        String email = normaliseEmail(request.email());
+        if (userRepository.existsByEmail(email)) {
+            throw new DuplicateResourceException("Email '" + email + "' is already registered");
         }
 
         // Self-registration always yields an OWNER; privileged roles are never caller-controlled.
         User user = User.builder()
-                .email(request.email().toLowerCase())
+                .email(email)
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .fullName(request.fullName())
                 .roles(new HashSet<>(Set.of(Role.OWNER)))
@@ -50,7 +54,7 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email().toLowerCase())
+        User user = userRepository.findByEmail(normaliseEmail(request.email()))
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -71,6 +75,14 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         return issueTokens(user);
+    }
+
+    /**
+     * The form emails are stored and looked up in. {@code Locale.ROOT}, so a JVM whose default
+     * locale is Turkish doesn't lowercase "I" to a dotless "ı".
+     */
+    public static String normaliseEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private AuthResponse issueTokens(User user) {
