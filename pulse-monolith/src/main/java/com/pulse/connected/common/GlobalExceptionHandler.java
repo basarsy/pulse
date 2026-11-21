@@ -7,6 +7,7 @@ import com.pulse.connected.common.exception.RateLimitExceededException;
 import com.pulse.connected.common.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleConcurrentModification(OptimisticLockingFailureException ex) {
         ErrorResponse response = ErrorResponse.of(HttpStatus.CONFLICT, "The resource was changed concurrently. Reload it and try again.");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    /**
+     * A unique (or other) constraint rejected the write, e.g. two registrations of the same email or
+     * VIN racing past the service's existence check. The client sent data that clashes with stored
+     * data: 409, without the constraint or SQL details.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.warn("Write rejected by a database constraint: {}", ex.getMostSpecificCause().getMessage());
+        ErrorResponse response = ErrorResponse.of(HttpStatus.CONFLICT, "The request conflicts with existing data.");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 

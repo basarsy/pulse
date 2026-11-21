@@ -1,3 +1,4 @@
+import { randomUUID } from '../utils/uuid';
 import { http } from './client';
 import type {
   AuthResponse, Campaign, Command, CommandType, SoftwareVersion, TelemetrySnapshot, User, Vehicle, VehicleUpdate,
@@ -18,7 +19,7 @@ export const vehicleApi = {
     http.post<Vehicle>('/vehicles', { vin, model, modelYear }),
   commands: (id: string) => http.get<Command[]>(`/vehicles/${id}/commands`),
   issueCommand: (id: string, type: CommandType) =>
-    http.post<Command>(`/vehicles/${id}/commands`, { type, idempotencyKey: crypto.randomUUID() }),
+    http.post<Command>(`/vehicles/${id}/commands`, { type, idempotencyKey: randomUUID() }),
   cancelCommand: (id: string, commandId: string) => http.delete<Command>(`/vehicles/${id}/commands/${commandId}`),
   telemetryHistory: (id: string, size = 20) =>
     http.get<TelemetrySnapshot[]>(`/vehicles/${id}/telemetry/history?page=0&size=${size}`),
