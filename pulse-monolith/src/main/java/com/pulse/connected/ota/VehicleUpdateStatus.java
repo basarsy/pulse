@@ -117,9 +117,9 @@ public class VehicleUpdateStatus {
     public int getStageIndex() { return stageIndex; }
     public void setStageIndex(int stageIndex) { this.stageIndex = stageIndex; }
 
-    /** True once the vehicle has finished this update, successfully or not. */
+    /** True once this update is settled for its rollout: installed, failed, or timed out. */
     public boolean isFinished() {
-        return status == UpdateStatus.INSTALLED || isFailed();
+        return status == UpdateStatus.INSTALLED || status == UpdateStatus.TIMED_OUT || isFailed();
     }
 
     public boolean isFailed() {

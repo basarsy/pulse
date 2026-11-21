@@ -41,13 +41,23 @@ export const campaignTone: Record<CampaignStatus, Tone> = {
 
 export const updateTone: Record<UpdateStatus, Tone> = {
   PENDING: 'neutral', DOWNLOADING: 'info', DOWNLOADED: 'info', INSTALLING: 'info',
-  INSTALLED: 'ok', FAILED: 'bad', ROLLED_BACK: 'warn',
+  INSTALLED: 'ok', FAILED: 'bad', ROLLED_BACK: 'warn', TIMED_OUT: 'warn',
 };
 
-/** Share of a campaign's targeted vehicles that have finished (installed or failed), as a whole percent. */
+/** Share of a campaign's targeted vehicles that have finished (installed, failed or timed out), as a whole percent. */
 export function campaignProgress(c: Campaign): number {
   if (!c.totalVehiclesTargeted) return c.status === 'COMPLETED' ? 100 : 0;
-  return Math.round(((c.vehiclesInstalled + c.vehiclesFailed) / c.totalVehiclesTargeted) * 100);
+  const finished = c.vehiclesInstalled + c.vehiclesFailed + (c.vehiclesTimedOut ?? 0);
+  return Math.round((finished / c.totalVehiclesTargeted) * 100);
+}
+
+/**
+ * Failed vehicles as a percent of those that didn't time out, as the server rates a stage: a
+ * vehicle that reported nothing is neither a failure nor counted against real failures.
+ */
+export function failureRate(c: Campaign): number {
+  const counted = c.totalVehiclesTargeted - (c.vehiclesTimedOut ?? 0);
+  return counted > 0 ? (c.vehiclesFailed / counted) * 100 : 0;
 }
 
 export const notificationTone: Record<Notification['type'], Tone> = {

@@ -247,13 +247,15 @@ sequenceDiagram
   - A rollout stage advances only once all of its vehicles have finished, and OTA updates had no timeout. One vehicle going offline mid-download held the whole rollout `IN_PROGRESS` forever.
   - Queued commands were sent by the reconnect flush, which ran inside the heartbeat's handling. If the flush failed, the retried heartbeat found the vehicle already online and never flushed again. A command committed just after the flush read the queue was missed too. Either way the command waited until it expired, although the vehicle was listening.
 - **Decision:**
-  - Every OTA update records when its vehicle last reported (`last_progress_at`). A locked job fails updates with no progress for 30 minutes (`pulse.ota.update-timeout`). A timeout counts as a failure, so many silent vehicles pause the rollout just as failed installs do. The check is repeated under the campaign's row lock, so progress that arrives meanwhile keeps the update running.
+  - Every OTA update records when its vehicle last reported (`last_progress_at`). A locked job marks updates with no progress for 30 minutes (`pulse.ota.update-timeout`) as `TIMED_OUT`. The check is repeated under the campaign's row lock, so progress that arrives meanwhile keeps the update running.
+  - `TIMED_OUT` finishes the update for its stage, but it isn't a failure: only installs that didn't succeed count towards the threshold. Timed-out vehicles are left out of the failure rate altogether, so parked cars neither pause a rollout nor dilute real failures (1 failed and 2 timed out of 4 is 1 of 2, not 1 of 4). If the vehicle later reports its outcome, the outcome replaces the timeout.
   - `VehicleReconnectedEvent` goes through the outbox ([design decision 1](#1-kafka-sends-go-through-a-transactional-outbox)), so a failed flush is resubmitted. A second locked job sends queued commands of vehicles that are already online. If both reach a command at once, optimistic locking makes one roll back, so a command is never sent twice.
 - **Ruled out:**
   - A timeout per stage: one slow vehicle would fail the whole stage, and fast stages would still wait out the full time.
-  - A new `TIMED_OUT` update status: every client and count would need to know it, while for the rollout it means the same as `FAILED`. The error message tells them apart.
+  - Counting a timeout as `FAILED`: in a real fleet a stage holds cars that are parked for hours, so rollouts would pause on unreachable cars, not on bad software.
+  - Counting timed-out vehicles in the failure rate's denominator: each silent car would lower the rate and hide real failures.
 - **Proof:**
-  - [`OtaUpdateTimeoutTest`](pulse-monolith/src/test/java/com/pulse/connected/ota/OtaUpdateTimeoutTest.java): a silent vehicle's update fails while one that still reports keeps going; a rollout completes or pauses depending on the threshold; an update that reported after the job picked it isn't failed.
+  - [`OtaUpdateTimeoutTest`](pulse-monolith/src/test/java/com/pulse/connected/ota/OtaUpdateTimeoutTest.java): a silent vehicle's update times out while one that still reports keeps going; a stage where 2 of 3 vehicles timed out completes despite a 10% threshold; 1 failed and 2 timed out of 4 pauses at a 40% threshold; a late install replaces the timeout and records the vehicle's version; an update that reported after the job picked it isn't timed out.
   - [`QueuedCommandFlushTest`](pulse-monolith/src/test/java/com/pulse/connected/command/QueuedCommandFlushTest.java): a reconnect sends the queued command through a completed outbox publication, and the job sends a queued command that missed the flush.
 
 ---
@@ -261,7 +263,7 @@ sequenceDiagram
 ## 🚀 Key Capabilities
 
 - **Asynchronous Command Engine**: Remote commands (`LOCK`, `UNLOCK`, `REMOTE_START`, etc.) are queued and dispatched via Kafka, executed asynchronously by vehicles, and pushed in real time over STOMP WebSockets. A vehicle is marked offline after 60s without a heartbeat; commands for offline vehicles are queued and flushed when it reconnects. Queued commands expire after 15 minutes, so a stale `UNLOCK` never fires hours later, and dispatched commands time out 60s after they were sent. Queued commands are also sent by a periodic job if a vehicle is online but its reconnect flush missed them. Late or duplicate results never reopen a finished command. All limits are configurable (`pulse.connectivity.*`, `pulse.commands.*`).
-- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold. A vehicle that reports no progress for 30 minutes counts as failed, so one silent vehicle cannot stall a rollout. Stages are increasing whole percentages ending at 100 and the threshold is 0–100; anything else is rejected with a `400` that names the problem.
+- **Fleet OTA Updates**: Staged canary rollouts (5% → 25% → 100%) with failure-rate monitoring that automatically pauses a rollout above a configurable threshold. A vehicle that reports no progress for 30 minutes is marked `TIMED_OUT`, so one silent vehicle cannot stall a rollout; timeouts are not failures and never pause it. Stages are increasing whole percentages ending at 100 and the threshold is 0–100; anything else is rejected with a `400` that names the problem.
 - **Telemetry Ingestion Pipeline**: Vehicle diagnostics (battery/fuel level, odometer, engine temperature, GPS) consumed from Kafka (`vehicle.telemetry`) and persisted in `telemetry_snapshots`.
 - **Security**: Stateless JWT with separate access and refresh token types, role-based access control (`OWNER`, `FAMILY_MEMBER`, `DEALER_STAFF`, `FLEET_ADMIN`, `SYSTEM_ADMIN`), and per-vehicle authorization on every vehicle-scoped endpoint. Self-registration always creates an `OWNER`.
 - **Idempotency & Rate Limiting**: per-user idempotency keys enforced by the database (a retry returns the original command, even when identical requests race; keys never expire; reusing a key for another vehicle or command type is a `409`), and a Redis fixed-window rate limit that only counts new commands (10 commands/min, `429` when exceeded), skipped and counted while Redis is unreachable.
@@ -301,7 +303,7 @@ sequenceDiagram
   - Software version package registry (`/api/v1/software-versions`)
   - Staged canary rollout campaign state machine (`DRAFT` -> `IN_PROGRESS` -> `PAUSED` -> `COMPLETED` / `ABORTED`)
   - Automated failure threshold monitoring with auto-pause
-  - Per-vehicle update status lifecycle (`PENDING` -> `DOWNLOADING` -> `DOWNLOADED` -> `INSTALLING` -> `INSTALLED` / `FAILED` -> `ROLLED_BACK`)
+  - Per-vehicle update status lifecycle (`PENDING` -> `DOWNLOADING` -> `DOWNLOADED` -> `INSTALLING` -> `INSTALLED` / `FAILED` -> `ROLLED_BACK`; `TIMED_OUT` when a vehicle goes silent)
   - Kafka OTA pipeline (`ota.vehicle-instructions` and `ota.vehicle-update-status`) and WebSocket progress streaming
 - [x] **Phase 4 — Telemetry & Observability**
   - Telemetry ingestion (`/api/v1/vehicles/{id}/telemetry/latest`, `/history`) and Kafka consumer (`vehicle.telemetry`)
@@ -343,7 +345,7 @@ sequenceDiagram
   - Kubernetes network policies for every component (default deny, proven in a kind cluster in CI) and a Redis password
   - Node 26 (Active LTS) for the dashboard in CI and in its image; CI actions moved off the deprecated Node 20 runtime
   - Live updates and API responses carry a version, and pages with live updates never replace a command, OTA update or rollout with an older one
-  - Heartbeats, telemetry and OTA installs write only their own columns of a vehicle (no lost updates); OTA updates time out; queued commands are flushed through the outbox and by a sweep
+  - Heartbeats, telemetry and OTA installs write only their own columns of a vehicle (no lost updates); silent OTA updates time out without counting as failures; queued commands are flushed through the outbox and by a sweep
 
 </details>
 

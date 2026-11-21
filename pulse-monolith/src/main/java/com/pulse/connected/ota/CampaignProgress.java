@@ -3,6 +3,7 @@ package com.pulse.connected.ota;
 import com.pulse.connected.domain.UpdateStatus;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Counts of a campaign's vehicle updates, built from the grouped summary query
@@ -10,7 +11,9 @@ import java.util.List;
  * questions of rollout evaluation and the campaign-wide numbers of the response, so a progress
  * event never has to load every update.
  *
- * <p>Failed means {@code FAILED} or {@code ROLLED_BACK}; finished means installed or failed.
+ * <p>Failed means {@code FAILED} or {@code ROLLED_BACK}. Finished means installed, failed or timed
+ * out. A timed-out update finishes its stage but is not a failure: it is left out of the failure
+ * rate altogether, so silent vehicles neither trip the threshold nor dilute real failures.
  */
 final class CampaignProgress {
 
@@ -25,37 +28,60 @@ final class CampaignProgress {
     }
 
     long total() {
-        return rows.stream().mapToLong(StageStatusCount::count).sum();
+        return count(rows.stream(), Kind.ANY);
     }
 
     long installed() {
-        return rows.stream().filter(row -> row.status() == UpdateStatus.INSTALLED).mapToLong(StageStatusCount::count).sum();
+        return count(rows.stream(), Kind.INSTALLED);
     }
 
     long failed() {
-        return rows.stream().filter(row -> isFailed(row.status())).mapToLong(StageStatusCount::count).sum();
+        return count(rows.stream(), Kind.FAILED);
+    }
+
+    long timedOut() {
+        return count(rows.stream(), Kind.TIMED_OUT);
     }
 
     long stageTotal(int stageIndex) {
-        return inStage(stageIndex).mapToLong(StageStatusCount::count).sum();
+        return count(inStage(stageIndex), Kind.ANY);
     }
 
     long stageFailed(int stageIndex) {
-        return inStage(stageIndex).filter(row -> isFailed(row.status())).mapToLong(StageStatusCount::count).sum();
+        return count(inStage(stageIndex), Kind.FAILED);
+    }
+
+    long stageTimedOut(int stageIndex) {
+        return count(inStage(stageIndex), Kind.TIMED_OUT);
     }
 
     long stageFinished(int stageIndex) {
-        return inStage(stageIndex)
-                .filter(row -> row.status() == UpdateStatus.INSTALLED || isFailed(row.status()))
-                .mapToLong(StageStatusCount::count)
-                .sum();
+        return count(inStage(stageIndex), Kind.INSTALLED) + stageFailed(stageIndex) + stageTimedOut(stageIndex);
     }
 
-    private java.util.stream.Stream<StageStatusCount> inStage(int stageIndex) {
+    /**
+     * Failed updates as a percentage of the stage's updates that haven't timed out: the vehicles
+     * whose outcome is known or still coming. 0 when there are none.
+     */
+    double stageFailureRate(int stageIndex) {
+        long counted = stageTotal(stageIndex) - stageTimedOut(stageIndex);
+        return counted == 0 ? 0 : stageFailed(stageIndex) * 100.0 / counted;
+    }
+
+    private Stream<StageStatusCount> inStage(int stageIndex) {
         return rows.stream().filter(row -> row.stageIndex() == stageIndex);
     }
 
-    private static boolean isFailed(UpdateStatus status) {
-        return status == UpdateStatus.FAILED || status == UpdateStatus.ROLLED_BACK;
+    private enum Kind { ANY, INSTALLED, FAILED, TIMED_OUT }
+
+    private static long count(Stream<StageStatusCount> rows, Kind kind) {
+        return rows.filter(row -> switch (kind) {
+                    case ANY -> true;
+                    case INSTALLED -> row.status() == UpdateStatus.INSTALLED;
+                    case FAILED -> row.status() == UpdateStatus.FAILED || row.status() == UpdateStatus.ROLLED_BACK;
+                    case TIMED_OUT -> row.status() == UpdateStatus.TIMED_OUT;
+                })
+                .mapToLong(StageStatusCount::count)
+                .sum();
     }
 }

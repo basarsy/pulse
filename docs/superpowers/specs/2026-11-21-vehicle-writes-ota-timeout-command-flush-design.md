@@ -20,18 +20,21 @@ The full code review of 2026-11-21 found three correctness gaps:
 ## Goals
 
 - Each writer of a vehicle's row writes only its own columns.
-- An OTA update with no progress for a configurable time (default 30 minutes) fails, and its stage
-  is evaluated as for any failure (it can complete, or pause the rollout over the threshold).
+- An OTA update with no progress for a configurable time (default 30 minutes) becomes `TIMED_OUT`.
+  That finishes it for its stage, so the stage can complete, but it is not a failure: only installs
+  that didn't succeed count towards the threshold (decided with the project owner on 2026-11-21).
+  Timed-out vehicles are left out of the failure rate entirely, so they don't dilute real failures.
+- If the vehicle reports its outcome after the timeout, the outcome replaces `TIMED_OUT`.
 - A failed reconnect flush is retried, and queued commands of an online vehicle are sent even when
   they missed the flush. No command is sent twice.
 
 ## Non-goals
 
-- `TIMED_OUT` as a separate OTA update status (see Approaches).
-- Cancelling the instruction on the vehicle when its update times out. A late progress report is
-  ignored by the forward-only status transitions, except a late `INSTALLED`: the update stays
-  `FAILED` (the stage was already decided), but the vehicle's software version is recorded, since
-  it really runs it now (counted in `pulse.ota.updates.late_installs`).
+- Cancelling the instruction on the vehicle when its update times out. After a timeout only an
+  outcome (`INSTALLED`, `FAILED`, `ROLLED_BACK`) is applied; intermediate progress is ignored, so
+  an update never reopens.
+- Re-evaluating a stage that already advanced when a late outcome arrives. Its counts change; its
+  decision stands.
 
 ## Approaches
 
@@ -48,11 +51,16 @@ The full code review of 2026-11-21 found three correctness gaps:
 - *Per-update `last_progress_at` and a locked sweep (picked).* It re-checks under the campaign's row
   lock (as progress events do), so progress that arrives between the sweep's query and the lock
   keeps the update running. It reuses the progress path, so metrics, live updates and stage
-  evaluation behave as for a reported failure.
-- *Per-stage timeout*: rejected. One slow vehicle would fail a whole stage, and a fast stage would
+  evaluation behave as for a reported outcome.
+- *A `TIMED_OUT` update status (picked)* rather than storing the timeout as `FAILED`: the rollout
+  must tell the two apart, since a parked car isn't evidence of bad software. The dashboard shows
+  it as its own count, and `CampaignResponse` gains `vehiclesTimedOut`.
+- *Timeout counted as `FAILED`*: rejected (first version of this change). In a real fleet a stage
+  holds cars parked for hours, so rollouts would pause on unreachable cars.
+- *Timed-out vehicles kept in the failure rate's denominator*: rejected. 1 failed and 9 timed out of
+  10 would read as 10% and hide that the only vehicle that reported failed.
+- *Per-stage timeout*: rejected. One slow vehicle would hold a whole stage, and a fast stage would
   still wait the full time.
-- *A `TIMED_OUT` update status*: rejected. The dashboard, counts and transitions would all need it,
-  and for the rollout it means the same as `FAILED`. The error message says what happened.
 
 **Queued commands**
 - *Outbox the reconnect event, plus a sweep (picked).* With `@ApplicationModuleListener`, Spring
@@ -66,7 +74,7 @@ The full code review of 2026-11-21 found three correctness gaps:
 
 | Property | Default | Meaning |
 |---|---|---|
-| `pulse.ota.update-timeout` | `PT30M` | No progress for this long fails an update |
+| `pulse.ota.update-timeout` | `PT30M` | No progress for this long times an update out |
 | `pulse.ota.timeout-check-interval-ms` | `60000` | How often the OTA timeout job runs |
 | `pulse.commands.pending-sweep-interval-ms` | `30000` | How often queued commands of online vehicles are sent |
 
@@ -82,8 +90,9 @@ timeout), and a partial index on unfinished updates for the sweep.
   heartbeat, then a telemetry reading, reads the row and waits on the lock. After the install
   commits, its version is still there. Against the previous telemetry code the test fails
   (`expected "2.0.0" but was "1.0.0"`).
-- `OtaUpdateTimeoutTest`: a silent update fails and one that still reports doesn't; the rollout
-  completes or pauses depending on the threshold; progress after the sweep's query keeps an update
+- `OtaUpdateTimeoutTest`: a silent update times out and one that still reports doesn't; timeouts
+  never pause a rollout, and are left out of the failure rate (1 failed, 2 timed out of 4 pauses at
+  40%); a late install replaces the timeout; progress after the sweep's query keeps an update
   running.
 - `QueuedCommandFlushTest`: a reconnect sends a queued command and its outbox publication
   completes; the sweep sends a queued command of a vehicle that was already online.

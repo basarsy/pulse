@@ -12,8 +12,10 @@ import java.util.List;
  * <pre>
  * PENDING → DOWNLOADING → DOWNLOADED → INSTALLING → INSTALLED   (forward only; repeats allowed
  *                                                                 for progress updates)
- * any non-final state → FAILED or ROLLED_BACK
+ * any non-final state → FAILED, ROLLED_BACK or TIMED_OUT
  * FAILED → ROLLED_BACK
+ * TIMED_OUT → INSTALLED, FAILED or ROLLED_BACK   (the vehicle reported its outcome after all;
+ *                                                 intermediate progress is ignored)
  * INSTALLED, ROLLED_BACK: final
  * </pre>
  */
@@ -35,7 +37,10 @@ final class UpdateStatusTransitions {
         if (from == UpdateStatus.FAILED) {
             return to == UpdateStatus.ROLLED_BACK;
         }
-        if (to == UpdateStatus.FAILED || to == UpdateStatus.ROLLED_BACK) {
+        if (from == UpdateStatus.TIMED_OUT) {
+            return to == UpdateStatus.INSTALLED || to == UpdateStatus.FAILED || to == UpdateStatus.ROLLED_BACK;
+        }
+        if (to == UpdateStatus.FAILED || to == UpdateStatus.ROLLED_BACK || to == UpdateStatus.TIMED_OUT) {
             return true;
         }
         return HAPPY_PATH.indexOf(to) >= HAPPY_PATH.indexOf(from);
