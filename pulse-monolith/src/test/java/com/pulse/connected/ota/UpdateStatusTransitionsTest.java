@@ -30,7 +30,18 @@ class UpdateStatusTransitionsTest {
             "INSTALLED, FAILED, false",
             "FAILED, INSTALLING, false",
             "FAILED, INSTALLED, false",
-            "ROLLED_BACK, FAILED, false"
+            "ROLLED_BACK, FAILED, false",
+            // timeout: from any unfinished state; afterwards only the outcome the vehicle reports late
+            "PENDING, TIMED_OUT, true",
+            "INSTALLING, TIMED_OUT, true",
+            "TIMED_OUT, INSTALLED, true",
+            "TIMED_OUT, FAILED, true",
+            "TIMED_OUT, ROLLED_BACK, true",
+            "TIMED_OUT, DOWNLOADING, false",
+            "TIMED_OUT, INSTALLING, false",
+            "TIMED_OUT, TIMED_OUT, false",
+            "INSTALLED, TIMED_OUT, false",
+            "FAILED, TIMED_OUT, false"
     })
     void transitions(UpdateStatus from, UpdateStatus to, boolean allowed) {
         assertThat(UpdateStatusTransitions.isAllowed(from, to)).isEqualTo(allowed);

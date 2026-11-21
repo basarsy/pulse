@@ -200,7 +200,8 @@ class ResponseMappingContractTest {
                 new StageStatusCount(0, UpdateStatus.FAILED, 1),
                 new StageStatusCount(1, UpdateStatus.INSTALLED, 1),
                 new StageStatusCount(1, UpdateStatus.ROLLED_BACK, 1),
-                new StageStatusCount(1, UpdateStatus.DOWNLOADING, 3)));
+                new StageStatusCount(1, UpdateStatus.DOWNLOADING, 3),
+                new StageStatusCount(1, UpdateStatus.TIMED_OUT, 3)));
 
         assertJson(rolloutService(updates).mapToCampaignResponse(campaign()), """
                 {"id":"00000000-0000-0000-0000-000000000001",
@@ -213,7 +214,7 @@ class ResponseMappingContractTest {
                             "startedAt":"2026-01-02T03:04:06Z","completedAt":"2026-01-02T03:04:07Z"},
                            {"id":"00000000-0000-0000-0000-000000000006","percentage":100,"status":"IN_PROGRESS",
                             "startedAt":"2026-01-02T03:04:08Z","completedAt":null}],
-                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2,"version":8}
+                 "totalVehiclesTargeted":12,"vehiclesInstalled":4,"vehiclesFailed":2,"vehiclesTimedOut":3,"version":8}
                 """);
     }
 

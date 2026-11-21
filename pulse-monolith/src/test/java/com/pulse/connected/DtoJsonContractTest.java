@@ -234,7 +234,7 @@ class DtoJsonContractTest {
                             "startedAt":"2026-01-02T03:04:06Z","completedAt":"2026-01-02T03:04:07Z"},
                            {"id":"00000000-0000-0000-0000-000000000006","percentage":100,"status":"IN_PROGRESS",
                             "startedAt":"2026-01-02T03:04:08Z","completedAt":null}],
-                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2,"version":8}
+                 "totalVehiclesTargeted":9,"vehiclesInstalled":4,"vehiclesFailed":2,"vehiclesTimedOut":3,"version":8}
                 """);
     }
 

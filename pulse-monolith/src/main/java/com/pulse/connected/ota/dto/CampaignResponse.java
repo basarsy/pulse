@@ -19,5 +19,6 @@ public record CampaignResponse(
         long totalVehiclesTargeted,
         long vehiclesInstalled,
         long vehiclesFailed,
+        long vehiclesTimedOut,
         long version) {
 }

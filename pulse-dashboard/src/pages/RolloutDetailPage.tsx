@@ -14,7 +14,7 @@ import { otaApi } from '../api/endpoints';
 import type { Campaign, CampaignStatus } from '../api/types';
 import { useTopic } from '../context/live';
 import { useAsync } from '../hooks/useAsync';
-import { campaignBar, campaignProgress, campaignTone, dateTime, label, updateTone } from '../utils/format';
+import { campaignBar, campaignProgress, campaignTone, dateTime, failureRate, label, updateTone } from '../utils/format';
 import { mergeLoaded, newer } from '../utils/versions';
 import styles from './RolloutDetailPage.module.css';
 
@@ -65,8 +65,8 @@ export default function RolloutDetailPage() {
   if (campaign.error) return <p className="error" role="alert">{campaign.error}</p>;
   if (!c) return <p className="muted">Loading rollout…</p>;
 
-  const failureRate = c.totalVehiclesTargeted ? (c.vehiclesFailed / c.totalVehiclesTargeted) * 100 : 0;
-  const overThreshold = failureRate > c.failureThresholdPercent;
+  const rate = failureRate(c);
+  const overThreshold = rate > c.failureThresholdPercent;
   const progress = campaignProgress(c);
 
   return (
@@ -103,8 +103,9 @@ export default function RolloutDetailPage() {
           <div className={styles.figures}>
             <Stat mono label="Installed" value={c.vehiclesInstalled} />
             <Stat mono label="Failed" value={c.vehiclesFailed} />
+            <Stat mono label="Timed out" value={c.vehiclesTimedOut ?? 0} detail="Not counted as failed" />
             <Stat mono label="Targeted" value={c.totalVehiclesTargeted} />
-            <Stat mono label="Failure rate" value={<span className={overThreshold ? 'text-bad' : ''}>{failureRate.toFixed(1)}%</span>}
+            <Stat mono label="Failure rate" value={<span className={overThreshold ? 'text-bad' : ''}>{rate.toFixed(1)}%</span>}
                   detail={overThreshold ? `Above the ${c.failureThresholdPercent}% limit` : `Limit ${c.failureThresholdPercent}%`} />
           </div>
         </div>

@@ -172,10 +172,6 @@ public class RolloutCampaignService {
         VehicleUpdateStatus updateStatus = locked.update();
 
         if (!UpdateStatusTransitions.isAllowed(updateStatus.getStatus(), event.status())) {
-            if (updateStatus.getStatus() == UpdateStatus.FAILED && event.status() == UpdateStatus.INSTALLED) {
-                recordLateInstall(updateStatus);
-                return;
-            }
             log.info("Ignoring stale OTA progress for update [{}]: {} -> {} is not allowed",
                     updateStatus.getId(), updateStatus.getStatus(), event.status());
             return;
@@ -186,15 +182,16 @@ public class RolloutCampaignService {
     }
 
     /**
-     * Fails an update whose vehicle has reported nothing since {@code cutoff} (offline, or lost the
-     * instruction), so its stage can finish: without it the stage would wait for that vehicle
-     * forever. It counts as a failure, so many silent vehicles pause the rollout like failed installs.
+     * Times out an update whose vehicle has reported nothing since {@code cutoff} (parked, offline,
+     * or lost the instruction), so its stage can finish: without it the stage would wait for that
+     * vehicle forever. {@code TIMED_OUT} is not a failure: it doesn't count towards the failure
+     * threshold. If the vehicle reports its outcome later, that outcome replaces it.
      *
      * <p>Re-checked under the campaign lock: progress that arrived after the sweep picked the update
-     * keeps it running. Returns whether the update was failed.
+     * keeps it running. Returns whether the update was timed out.
      */
     @Transactional
-    public boolean failIfStalled(UUID updateStatusId, Instant cutoff, String reason) {
+    public boolean timeOutIfStalled(UUID updateStatusId, Instant cutoff, String reason) {
         LockedUpdate locked = lockCampaignAndLoad(updateStatusId);
         VehicleUpdateStatus updateStatus = locked.update();
         CampaignStatus campaignStatus = locked.campaign().getStatus();
@@ -206,22 +203,8 @@ public class RolloutCampaignService {
         log.warn("OTA update [{}] of vehicle [{}] timed out in {}: {}", updateStatus.getId(),
                 updateStatus.getVehicle().getId(), updateStatus.getStatus(), reason);
         meterRegistry.counter("pulse.ota.updates.timed_out").increment();
-        applyProgress(locked.campaign(), updateStatus, UpdateStatus.FAILED, updateStatus.getProgressPercent(), reason);
+        applyProgress(locked.campaign(), updateStatus, UpdateStatus.TIMED_OUT, updateStatus.getProgressPercent(), reason);
         return true;
-    }
-
-    /**
-     * The vehicle installed an update already counted as failed (typically timed out while the car
-     * was parked, then it resumed). The update stays FAILED, so the stage's counts and decisions
-     * don't change after the fact, but the vehicle really runs the new version now: record it, or
-     * the dashboard shows the old one and the next rollout instructs this vehicle again.
-     */
-    private void recordLateInstall(VehicleUpdateStatus updateStatus) {
-        String label = updateStatus.getTargetVersion().getVersionLabel();
-        log.warn("Vehicle [{}] installed {} after its update [{}] was marked FAILED; recording the version only",
-                updateStatus.getVehicle().getId(), label, updateStatus.getId());
-        vehicleRepository.updateSoftwareVersion(updateStatus.getVehicle().getId(), label);
-        meterRegistry.counter("pulse.ota.updates.late_installs").increment();
     }
 
     private record LockedUpdate(RolloutCampaign campaign, VehicleUpdateStatus update) {
@@ -257,11 +240,12 @@ public class RolloutCampaignService {
 
         if (status == UpdateStatus.INSTALLED) {
             updateStatus.setCompletedAt(now);
+            updateStatus.setErrorMessage(null); // e.g. the timeout message, if it reported late
             // Only the version column: heartbeats and telemetry write the same row concurrently, and
             // saving the whole loaded vehicle could revert their changes (or they this one).
             vehicleRepository.updateSoftwareVersion(updateStatus.getVehicle().getId(),
                     updateStatus.getTargetVersion().getVersionLabel());
-        } else if (status == UpdateStatus.FAILED || status == UpdateStatus.ROLLED_BACK) {
+        } else if (status == UpdateStatus.FAILED || status == UpdateStatus.ROLLED_BACK || status == UpdateStatus.TIMED_OUT) {
             updateStatus.setCompletedAt(now);
             updateStatus.setErrorMessage(errorMessage != null ? errorMessage : "Installation failed");
         }
@@ -377,11 +361,13 @@ public class RolloutCampaignService {
             return;
         }
 
+        // Timed-out vehicles are left out: only reported failures count (see CampaignProgress).
         long failedCount = progress.stageFailed(stageIdx);
-        double failureRate = failedCount * 100.0 / stageTotal;
+        long timedOut = progress.stageTimedOut(stageIdx);
+        double failureRate = progress.stageFailureRate(stageIdx);
 
-        log.info("Campaign [{}] stage {}: {}/{} failed ({}% vs threshold {}%)",
-                campaign.getId(), stageIdx + 1, failedCount, stageTotal,
+        log.info("Campaign [{}] stage {}: {}/{} failed, {} timed out ({}% vs threshold {}%)",
+                campaign.getId(), stageIdx + 1, failedCount, stageTotal - timedOut, timedOut,
                 String.format("%.2f", failureRate), campaign.getFailureThresholdPercent());
 
         if (failureRate > campaign.getFailureThresholdPercent()) {
@@ -495,6 +481,7 @@ public class RolloutCampaignService {
         CampaignProgress progress = progressOf(campaign);
         long installed = progress.installed();
         long failed = progress.failed();
+        long timedOut = progress.timedOut();
         long total = progress.total();
 
         List<RolloutStageResponse> stageResponses = campaign.getStages().stream()
@@ -519,6 +506,7 @@ public class RolloutCampaignService {
                 total,
                 installed,
                 failed,
+                timedOut,
                 campaign.getVersion());
     }
 

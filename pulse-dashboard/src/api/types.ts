@@ -6,7 +6,8 @@ export type CommandType = 'LOCK' | 'UNLOCK' | 'REMOTE_START' | 'FLASH_LIGHTS' | 
 export type CommandStatus = 'PENDING' | 'SENT' | 'ACKNOWLEDGED' | 'COMPLETED' | 'FAILED' | 'TIMED_OUT' | 'CANCELLED';
 export type CampaignStatus = 'DRAFT' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'ABORTED';
 export type StageStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
-export type UpdateStatus = 'PENDING' | 'DOWNLOADING' | 'DOWNLOADED' | 'INSTALLING' | 'INSTALLED' | 'FAILED' | 'ROLLED_BACK';
+export type UpdateStatus =
+  'PENDING' | 'DOWNLOADING' | 'DOWNLOADED' | 'INSTALLING' | 'INSTALLED' | 'FAILED' | 'ROLLED_BACK' | 'TIMED_OUT';
 
 export const COMMAND_TYPES: CommandType[] = ['LOCK', 'UNLOCK', 'REMOTE_START', 'FLASH_LIGHTS', 'LOCATE', 'CLIMATE_ON', 'CHECK_STATUS'];
 export const ADMIN_ROLES: Role[] = ['FLEET_ADMIN', 'SYSTEM_ADMIN'];
@@ -100,6 +101,8 @@ export interface Campaign {
   totalVehiclesTargeted: number;
   vehiclesInstalled: number;
   vehiclesFailed: number;
+  /** Vehicles that reported nothing within the update timeout: finished, but not failures. */
+  vehiclesTimedOut: number;
   /** Higher for every later committed state of this rollout (see utils/versions). */
   version: number;
 }
