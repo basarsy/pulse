@@ -27,8 +27,16 @@ kubectl -n "$NS" apply -f k8s/infrastructure/redis-service.yaml -f k8s/infrastru
 kubectl -n "$NS" rollout status deployment/redis --timeout=120s
 
 echo "--- the app, with the password"
-out=$(redis_cli "$NS" as-app "app=pulse,component=pulse-app" -a "$PASSWORD" ping)
-echo "$out"
+# Redis is ready (its probe answered PING), but a new endpoint and a new pod's policy rules can take
+# a few seconds to reach the node's network rules. So this check, which must succeed, is retried.
+# The checks that must fail are never retried: a retry can't hide a hole in the policies.
+for attempt in 1 2 3 4 5; do
+  out=$(redis_cli "$NS" "as-app-$attempt" "app=pulse,component=pulse-app" -a "$PASSWORD" ping)
+  echo "$out"
+  [[ $out == *PONG* ]] && break
+  echo "(attempt $attempt: not yet, retrying)"
+  sleep 3
+done
 [[ $out == *PONG* ]] || fail "the app could not reach Redis with the password"
 
 echo "--- the app, without the password"
